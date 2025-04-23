@@ -515,7 +515,7 @@ def main():
     
     # ─── TAB 2: PAGER ──────────────────────────────────────────
     with tab_pg:
-        st.header("PAGER Gene Set Enrichment")
+        st.header("Associated Pathways, Annotated-lists and Gene-signatures (PAGs) from PAGER")
 
         genes = st.session_state.get("gene_list", [])
         if not genes:
