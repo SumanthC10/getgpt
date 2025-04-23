@@ -113,7 +113,7 @@ def load_openai_llm():
     return ChatOpenAI(
         api_key=st.secrets["OPENAI_API_KEY"],
         temperature=0.1,
-        max_tokens=512
+        max_tokens=1024
     )
 
 

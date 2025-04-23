@@ -2,10 +2,12 @@ import io
 import logging
 import requests
 from Bio import Medline
+# Import gene extraction functions so we can extract gene names per article.
+from gene_extraction import extract_gene_names, extract_genes_with_chatgpt
 
 logger = logging.getLogger(__name__)
 
-def query_pubmed_for_abstracts(disease_name, max_results=5):
+def query_pubmed_for_abstracts(disease_name, max_results=5, llm=None):
     try:
         # Step 1: Use ESearch to get PubMed IDs in JSON format
         esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
@@ -21,7 +23,7 @@ def query_pubmed_for_abstracts(disease_name, max_results=5):
         search_results = esearch_resp.json()
         id_list = search_results.get("esearchresult", {}).get("idlist", [])
         if not id_list:
-            return "No relevant PubMed articles found."
+            return "No relevant PubMed articles found.", {}
         
         # Step 2: Use EFetch to get article details in MEDLINE text format
         efetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -39,11 +41,22 @@ def query_pubmed_for_abstracts(disease_name, max_results=5):
         handle = io.StringIO(medline_data)
         articles = list(Medline.parse(handle))
         abstracts = []
+        pubmed_gene_pmids = {}  # mapping: gene -> set of PMIDs
         for article in articles:
+            pmid = article.get('PMID', 'N/A')
             title = article.get('TI', 'N/A')
             abstract = article.get('AB', 'N/A')
-            abstracts.append(f"Title: {title}\n\nAbstract: {abstract}\n\n")
-        return "\n".join(abstracts)
+            article_text = f"PMID: {pmid}\nTitle: {title}\nAbstract: {abstract}\n"
+            abstracts.append(article_text)
+            if llm:
+                # Extract genes for this article using ChatGPT.
+                genes_text = extract_genes_with_chatgpt(article_text, f"PubMed abstract PMID {pmid}", llm)
+                if isinstance(genes_text, list):
+                    genes_text = " ".join(genes_text)
+                genes = extract_gene_names(genes_text)
+                for gene in genes:
+                    pubmed_gene_pmids.setdefault(gene, set()).add(pmid)
+        return "\n\n".join(abstracts), pubmed_gene_pmids
     except Exception as e:
         logger.exception("Error querying PubMed: %s", str(e))
-        return f"An error occurred while querying PubMed: {str(e)}"
+        return f"An error occurred while querying PubMed: {str(e)}", {}

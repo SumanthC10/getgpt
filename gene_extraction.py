@@ -1,28 +1,98 @@
-import re
-import logging
-import streamlit as st
+import re, json, logging, pathlib
+from typing import List, Set
+from itertools import chain
 
 logger = logging.getLogger(__name__)
 
-def extract_gene_names(text):
-    gene_pattern = r'\b[A-Z][A-Z0-9]+\b'
-    return re.findall(gene_pattern, text)
+# load HGNC cache as before …
+HGNC_CACHE: Set[str] = set()
+try:
+    cache_path = pathlib.Path(__file__).with_suffix(".hgnc")
+    if cache_path.exists():
+        HGNC_CACHE = {ln.strip() for ln in cache_path.read_text().splitlines() if ln.strip()}
+except Exception as e:
+    logger.warning("Could not load HGNC cache: %s", e)
 
-def extract_genes_with_chatgpt(text, context_label, llm):
-    try:
-        prompt = f"""As an expert in genomics and bioinformatics, extract a list of the differentially expressed genes from the following {context_label} text.
-Output the gene symbols in a numbered list.
+# your regex
+_gene_regex = re.compile(r"\b[A-Z][A-Z0-9\-]{1,9}\b")
 
-Text:
-{text}
+def extract_gene_names(text: str) -> List[str]:
+    return list(dict.fromkeys(_gene_regex.findall(text)))
 
-Genes:"""
+def extract_genes_with_chatgpt(
+    text: str,
+    context_label: str,
+    llm,
+    extra_hgnc_check: bool = True,
+    max_chunk_chars: int = 15_000
+) -> List[str]:
+    """
+    1) If text ≤ max_chunk_chars, send in one shot.
+    2) Else split on sentences into ~max_chunk_chars chunks.
+    3) Call LLM (GPT‑4.1) on each, JSON‑parse, uppercase & dedupe.
+    4) Finally apply regex‐in‐text + optional HGNC cache.
+    """
+    prompt = f"""
+You are an expert molecular biologist.
+Extract *only* true human gene symbols from the following {context_label}. Follow these rules exactly:
+1.  A valid symbol must match the regex  `\\b[A-Z][A-Z0-9\\-]{1,9}\\b`.
+2.  The 3 words **before** or **after** the token must mention biology
+    (e.g. “gene”, “expression”, “mutation”, “variant”, “allele”, “up‑regulated”).
+3.  Exclude:
+      • cell‑lines (e.g. HEK293, 3T3)
+      • protein names that are not also gene symbols
+      • pathways, GO terms, locus tags, accession IDs
+      • gene names that appear ONLY in the bibliography or references and not the main text 
+            (e.g. in a citation such as: "Kettunen E, ... L1CAM, INP10, P-cadherin, tPA and ITGB4 over-expression in malignant pleural mesothe- liomas revealed by combined use of cDNA and
+            tissue microarray. Carcinogenesis 2005; 26: 17-25." If the genes such as L1CAM INP10 DO NOT appear in the main text, exclude them from the list)
+4.  Cross‑check against the official HGNC list (human genes) and discard
+    anything absent.
+5.  **Output JSON array** of the unique symbols, lowercase *not* allowed.
+   e.g.  ["BRCA1","TP53"]
+
+Respond with **nothing but** that JSON.
+"""
+
+    # helper to split on sentence boundaries
+    def chunk_text(s: str):
+        if len(s) <= max_chunk_chars:
+            yield s
+            return
+        parts = re.split(r'(?<=[\.\?\!])\s+', s)
+        buf = ""
+        for sent in parts:
+            if len(buf) + len(sent) + 1 <= max_chunk_chars:
+                buf += sent + " "
+            else:
+                yield buf
+                buf = sent + " "
+        if buf:
+            yield buf
+
+    raw_lists = []
+    for chunk in chunk_text(text[:50_000]):  # cap at 50k chars
         messages = [
-            {"role": "system", "content": "You are an expert in genomics and bioinformatics."},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": "You are a precise extraction engine."},
+            {"role": "user",   "content": prompt},
+            {"role": "user",   "content": chunk}
         ]
-        response = llm.predict_messages(messages)
-        return response.content.strip()
-    except Exception as e:
-        logger.exception(f"Error in ChatGPT gene extraction: {str(e)}")
-        return f"An error occurred while extracting genes with ChatGPT: {str(e)}"
+        try:
+            raw = llm.predict_messages(messages).content.strip()
+            arr = json.loads(raw)
+            if isinstance(arr, list):
+                raw_lists.append([g.strip().upper() for g in arr])
+        except Exception:
+            logger.warning("Chunk output not valid JSON, skipping.")
+
+    # flatten & preserve order
+    model_genes = list(dict.fromkeys(chain.from_iterable(raw_lists)))
+
+    # must actually appear in text
+    in_text = set(extract_gene_names(text))
+    filtered = [g for g in model_genes if g in in_text]
+
+    # optional HGNC check
+    if extra_hgnc_check and HGNC_CACHE:
+        filtered = [g for g in filtered if g in HGNC_CACHE]
+
+    return filtered
