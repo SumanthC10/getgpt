@@ -101,15 +101,28 @@ def query_opentargets(disease_name):
     try:
         # Convert disease name to a MeSH ID and then to a EFO ID.
         mesh_id = get_mesh_id_from_file(disease_name)
-        efo_id_raw = get_oxo_mapping_from_mesh(mesh_id)
-        # Convert from "EFO:XXXX" to "EFO_XXXX" if required by OpenTargets.
-        efo_id = efo_id_raw.replace(":", "_")
-        
+        efo_id_raw, mondo_id_raw = get_oxo_mapping_from_mesh(mesh_id)
+        efo_id = efo_id_raw.replace(":", "_") if efo_id_raw else None
+        mondo_id = mondo_id_raw.replace(":", "_") if mondo_id_raw else None
+        mapping_ids = [i for i in (efo_id, mondo_id) if i]
+        if not mapping_ids:
+            result += "No EFO or MONDO mapping found — skipping OpenTargets steps.\n"        
         result = ""
         
         # Associated Targets.
         try:
-            associated_targets = get_associated_targets(efo_id)
+            all_targets = []
+            for mid in mapping_ids:
+                try:
+                    all_targets.extend(get_associated_targets(mid))
+                except Exception:
+                    logger.warning(f"no targets for {mid}", exc_info=False)
+            unique = {}
+            for t in all_targets:
+                sym = t['approvedSymbol']
+                if sym not in unique or t['score'] > unique[sym]['score']:
+                    unique[sym] = t
+            associated_targets = list(unique.values())
             opentargets_genes = {}
             if not associated_targets:
                 result += "No associated targets found in OpenTargets.\n"
@@ -123,7 +136,18 @@ def query_opentargets(disease_name):
         
         # Genetics Studies.
         try:
-            studies = get_studies(efo_id)
+            all_studies = []
+            for mid in mapping_ids:
+                try:
+                    all_studies.extend(get_studies(mid))
+                except Exception:
+                    logger.warning(f"no studies for {mid}", exc_info=False)
+            unique = {}
+            for s in all_studies:
+                key = s['id']
+                if key not in unique:
+                    unique[key] = s
+            studies = list(unique.values())
         except Exception as e:
             logger.error(f"Error fetching studies: {e}")
             studies = []

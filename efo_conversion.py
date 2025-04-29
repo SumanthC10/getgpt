@@ -30,18 +30,16 @@ def get_mesh_id_from_file(disease_name, file_path="data/mesh_terms.csv"):
     except Exception as e:
         raise RuntimeError(f"Error reading MeSH file: {e}")
 
-import requests
-
 def get_oxo_mapping_from_mesh(mesh_id):
     """
-    Maps a MeSH ID to an EFO ID using the EMBL-EBI Ontology Xref Service (OxO).
-    If no EFO mapping is found at distance 1–3, it then tries MONDO.
+    Maps a MeSH ID to both an EFO ID and a MONDO ID using the EMBL-EBI Ontology Xref Service (OxO).
+    It searches distances 1–3 for each ontology separately.
 
     Parameters:
         mesh_id (str): The MeSH ID to be mapped.
 
     Returns:
-        str: The corresponding CURIE (e.g., "EFO:0005148" or "MONDO:0001234").
+        tuple: (efo_curie, mondo_curie), where each is a string like "EFO:0005148" or "MONDO:0001234".
 
     Raises:
         ValueError: If no mapping is found within distance 1–3 for either ontology.
@@ -49,8 +47,9 @@ def get_oxo_mapping_from_mesh(mesh_id):
     oxo_url = 'https://www.ebi.ac.uk/spot/oxo/api/search'
     headers = {'Content-Type': 'application/json'}
 
-    # Try first for EFO, then for MONDO
+    results = {"EFO": None, "MONDO": None}
     for target in ["EFO", "MONDO"]:
+        found = None
         for distance in range(1, 4):
             payload = {
                 "ids": [mesh_id],
@@ -60,10 +59,16 @@ def get_oxo_mapping_from_mesh(mesh_id):
             }
             resp = requests.post(oxo_url, headers=headers, json=payload)
             resp.raise_for_status()
-            results = resp.json().get('_embedded', {}).get('searchResults', [])
-            if results:
-                mappings = results[0].get('mappingResponseList', [])
-                if mappings:
-                    return mappings[0]['curie']
+            search_results = resp.json().get('_embedded', {}).get('searchResults', [])
+            if search_results:
+                mapping_list = search_results[0].get('mappingResponseList', [])
+                if mapping_list:
+                    found = mapping_list[0]['curie']
+                    break
+        if not found:
+            logging.getLogger(__name__).warning(
+                f"No {target} mapping found for MeSH ID {mesh_id} within distance 1–3"
+            )
+        results[target] = found
 
-    raise ValueError(f"No EFO or MONDO mapping found for MeSH ID {mesh_id} within distance 1–3")
+    return results['EFO'], results['MONDO']
