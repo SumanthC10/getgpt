@@ -116,57 +116,84 @@ def load_openai_llm():
         max_tokens=1024
     )
 
+def get_explanation_sections(
+        disease1_name, overlapping_genes1,
+        disease2_name, overlapping_genes2, llm):
+    """
+    Generates detailed, rubric-focused explanation sections
+    (≈150 words or 6-8 bullets each) for the two diseases,
+    their relationship, and the overlapping genes.
+    """
+    bullet_hint = "• "  # use a real bullet so ChatGPT tends to respond in list form
 
-# ======= Explanation Sections Function (Ordered) =======
-def get_explanation_sections(disease1_name, overlapping_genes1, disease2_name, overlapping_genes2, llm):
-    """
-    Generates concise explanation sections using the LLM concurrently.
-    
-    Returns a dictionary with detailed explanations for:
-      1) Key Features and Genetic Associations for the base disease,
-      2) Key Features and Genetic Associations for the compared disease,
-      3) The relationship between the diseases,
-      4) The role of overlapping genes.
-      
-    Each explanation is requested to be concise (2–3 sentences).
-    """
+    # Compute the union of overlapping genes as a set
+    genes_overlap = set(overlapping_genes1).intersection(overlapping_genes2)
+    genes_overlap_list = sorted(genes_overlap)
+    genes_overlap_str = ", ".join(genes_overlap_list) if genes_overlap_list else 'None'
+
     sections = [
+        # 1 ────────────── Disease 1 ──────────────
         (f"Key Features and Genetic Associations for {disease1_name}",
-         f"""You are an expert in biomedical informatics.
-Provide a concise explanation (2–3 sentences) summarizing the key features and genetic associations for {disease1_name}.
-Context: Base Disease: {disease1_name}.
-Overlapping Genes: {", ".join(overlapping_genes1)}.
-If the disease name needs to be pluralized, pluralize it.
+ f"""
+You are an expert biomedical scientific editor writing for NIH study-section reviewers.
+In ≈150 words **or** 6-8 {bullet_hint}bullets, present a mini-review of **{disease1_name}** that covers:
+
+{bullet_hint}Epidemiology (incidence/prevalence, age/sex bias).  
+{bullet_hint}Core clinical phenotype & diagnostic hallmarks.  
+{bullet_hint}Major pathophysiological pathways (cell types, signaling cascades).  
+{bullet_hint}≥3 high-impact genes/loci **with rsID or OMIM ID**; include effect direction & mechanism.  
+{bullet_hint}Notable gene–environment or polygenic-risk insights.  
+{bullet_hint}Key therapeutic targets emerging from genetics.
 """),
+
+        # 2 ────────────── Disease 2 ──────────────
         (f"Key Features and Genetic Associations for {disease2_name}",
-         f"""You are an expert in biomedical informatics.
-Provide a concise explanation (2–3 sentences) summarizing the key features and genetic associations for {disease2_name}.
-Context: Compared Disease: {disease2_name}.
-Overlapping Genes: {", ".join(overlapping_genes2)}.
-If the disease name needs to be pluralized, pluralize it.
+ f"""
+You are an expert biomedical scientific editor writing for NIH study-section reviewers.
+In ≈150 words **or** 6-8 {bullet_hint}bullets, present a mini-review of **{disease2_name}** that covers:
+
+{bullet_hint}Epidemiology (incidence/prevalence, age/sex bias).  
+{bullet_hint}Core clinical phenotype & diagnostic hallmarks.  
+{bullet_hint}Major pathophysiological pathways (cell types, signaling cascades).  
+{bullet_hint}≥3 high-impact genes/loci **with rsID or OMIM ID**; include effect direction & mechanism.  
+{bullet_hint}Notable gene–environment or polygenic-risk insights.  
+{bullet_hint}Key therapeutic targets emerging from genetics.
 """),
+
+        # 3 ────────────── Relationship ──────────────
         (f"Relationship Between {disease1_name} and {disease2_name}",
-         f"""You are an expert in biomedical informatics.
-Provide a concise explanation (2–3 sentences) explaining how {disease1_name} and {disease2_name} may be related.
-Context: {disease1_name} (Overlapping Genes: {", ".join(overlapping_genes1)}); 
-{disease2_name} (Overlapping Genes: {", ".join(overlapping_genes2)}).
-If the disease name needs to be pluralized, pluralize it.
+ f"""
+You are an expert biomedical scientific editor.
+In ≈120 words discuss **why and how {disease1_name} and {disease2_name} intersect**, covering:
+
+{bullet_hint}Shared molecular or inflammatory pathways.  
+{bullet_hint}Clinical or epidemiological comorbidity evidence.  
+{bullet_hint}How the overlapping genes ({genes_overlap_str}) mechanistically link the diseases.  
+{bullet_hint}Implications for risk stratification or therapy.
 """),
-        (f"Role of Overlapping Genes",
-         f"""You are an expert in biomedical informatics.
-Provide a concise explanation (2–3 sentences per gene in a bullet point format numbering each gene. 
-Each gene should have its own bullet, and there should not be repeated bullets. Format should be [Gene_Name]: [Explanation]) describing how the overlapping genes contribute to the relationship between {disease1_name} and {disease2_name}.
-Context: Overlapping Genes for {disease1_name}: {", ".join(overlapping_genes1)}; 
-Overlapping Genes for {disease2_name}: {", ".join(overlapping_genes2)}.
-If the disease name needs to be pluralized, pluralize it.
+
+        # 4 ────────────── Overlapping genes ──────────────
+        ("Role of Overlapping Genes",
+ f"""
+You are an expert biomedical geneticist.
+Return **one bullet per gene** in this exact markdown format:  
+`[GENE]: ↑↓ concise (1-2 sentence) explanation including key variant(s), pathway, and how it drives BOTH diseases`.
+
+Genes to cover: {genes_overlap_str}.
+Do **not** repeat bullets or combine genes.
 """)
     ]
+
+    # ---------- parallel LLM calls ----------
     results = {}
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [executor.submit(llm.predict_messages, [
-            {"role": "system", "content": "You are an expert in biomedical informatics."},
-            {"role": "user", "content": prompt}
-        ]) for _, prompt in sections]
+        futures = [executor.submit(
+            llm.predict_messages,
+            [
+                {"role": "system", "content": "You are an expert biomedical scientific editor."},
+                {"role": "user", "content": prompt}
+            ])
+            for _, prompt in sections]
         for (header, _), future in zip(sections, futures):
             try:
                 results[header] = future.result().content.strip()
