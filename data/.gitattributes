@@ -1,0 +1,2 @@
+alt_embeddings.safetensors filter=lfs diff=lfs merge=lfs -text
+preferred_embeddings.safetensors filter=lfs diff=lfs merge=lfs -text
