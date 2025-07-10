@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "accelerator>=2024.9.13",
     "pandas>=2.3.1",
     "sentence-transformers>=5.0.0",
     "streamlit>=1.46.1",
