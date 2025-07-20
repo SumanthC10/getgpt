@@ -12,21 +12,7 @@ from abc import ABC, abstractmethod
 import collections
 import gseapy as gp
 from pandasgwas import get_studies_by_efo_id , get_associations_by_study_id
-from scipy.interpolate import PchipInterpolator
-
-# Official burden knots (p-value ↔ score)
-# p_knots must be in increasing order for -log10(p) to be increasing.
-# We reverse both arrays to make the input to PchipInterpolator valid.
-p_knots = np.array([1.0, 1e-7, 1e-10, 1e-13, 1e-17])
-s_knots = np.array([0.0, 0.25, 0.50, 0.75, 1.00])
-
-# Work in -log10 space for numerical stability
-x = -np.log10(p_knots)
-spl = PchipInterpolator(x, s_knots, extrapolate=True)
-
-def ot_smooth_score(p):
-    p = np.maximum(p, np.nextafter(0, 1))      # avoid log(0)
-    return np.clip(spl(-np.log10(p)), 0, 1)
+from itertools import chain # Added import for chain
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -160,19 +146,14 @@ class GWASCatalog(DataSource):
         return f"Data from {self.source_name}"
     
     def get_genes(self, disease_id: str) -> pd.DataFrame:
-        print(f"\n[DEBUG:GWASCatalog] Received disease_id: {disease_id}")
         try:
             # Normalize EFO ID to use colon
             normalized_efo_id = disease_id.replace(':', '_')
-            print(f"[DEBUG:GWASCatalog] Normalized EFO ID: {normalized_efo_id}")
             # 1. Find all studies for the given disease ID
             studies_df = get_studies_by_efo_id(normalized_efo_id).studies
             if studies_df.empty:
-                print(f"[DEBUG:GWASCatalog] Info: No studies found for disease ID {normalized_efo_id}")
                 return pd.DataFrame()
-            print(f"[DEBUG:GWASCatalog] Found {len(studies_df)} studies for {normalized_efo_id}")
         except Exception as e:
-            print(f"[DEBUG:GWASCatalog] Error fetching studies for disease ID {normalized_efo_id}: {e}")
             return pd.DataFrame()
 
         all_results = []
@@ -218,36 +199,24 @@ class GWASCatalog(DataSource):
                     all_results.append({
                         "gene_symbol": gene,
                         "source": self.source_name,
-                        "score": data['score'],
+                        "g_score": -np.log10(data['score']),
                         "evidence": data['evidence']
                     })
-
             except Exception as e:
                 print(f"Warning: Could not process study {study_id}. Error: {e}")
                 continue
-
         if not all_results:
             return pd.DataFrame()
-
-        # 3. Aggregate results across all studies
         final_df = pd.DataFrame(all_results)
-        
         # Define aggregation logic for grouping by gene symbol
         agg_logic = {
             'source': 'first',
-            'score': 'min',  # Keep the best (lowest) p-value across all studies
-            'evidence': lambda x: sum(x, []) # Concatenate lists of evidence dicts
+            'g_score': 'max',  # Keep the best (highest) -log10(p)
+            'evidence': lambda x: list(chain.from_iterable(x))
         }
-
+        # Group by gene and aggregate
         aggregated_df = final_df.groupby('gene_symbol').agg(agg_logic).reset_index()
-
-        if aggregated_df.empty:
-            return aggregated_df
-
-        # Apply the new OpenTargets-style smoothing score
-        aggregated_df['score'] = ot_smooth_score(aggregated_df['score'].astype(float))
-
-        return aggregated_df[['gene_symbol', 'source', 'score', 'evidence']].sort_values(by='score', ascending=False).reset_index(drop=True)
+        return aggregated_df[['gene_symbol', 'source', 'g_score', 'evidence']].sort_values(by='g_score', ascending=False).reset_index(drop=True)
 
 
 
@@ -408,20 +377,14 @@ class RummaGEO(DataSource):
             processed_data.append({
                 "gene_symbol": gene,
                 "source": self.source_name,
-                "p_value": best_p,
+                "e_score": -np.log10(best_p),
                 "evidence": sorted(list(set(gene_to_gses.get(gene, []))))
             })
-
         if not processed_data:
             print("[DEBUG:RummaGEO] Could not generate final scored data.")
             return pd.DataFrame()
-
         final_df = pd.DataFrame(processed_data)
-        
-        # Apply the new OpenTargets-style smoothing score
-        final_df['score'] = ot_smooth_score(final_df['p_value'].astype(float))
-        
-        return final_df[['gene_symbol', 'source', 'score', 'evidence']].sort_values(by='score', ascending=False).reset_index(drop=True)
+        return final_df[['gene_symbol', 'source', 'e_score', 'evidence']].sort_values(by='e_score', ascending=False).reset_index(drop=True)
 
 #summarize how the opentargets scoring works
 class OpenTargets(DataSource):
@@ -442,9 +405,9 @@ class OpenTargets(DataSource):
 
         url = "https://api.platform.opentargets.org/api/v4/graphql"
         query = """
-        query associatedTargetsQuery($efoId: String!) {
+        query associatedTargetsQuery($efoId: String!, $size: Int!, $from: Int!) {
           disease(efoId: $efoId) {
-            associatedTargets {
+            associatedTargets(size: $size, from: $from) {
               rows {
                 target { approvedSymbol }
                 score
@@ -454,7 +417,7 @@ class OpenTargets(DataSource):
         }
         """
         try:
-            response = requests.post(url, json={"query": query, "variables": {"efoId": normalized_efo_id}})
+            response = requests.post(url, json={"query": query, "variables": {"efoId": normalized_efo_id, "size": 10000, "from": 0}})
             response.raise_for_status()
             data = response.json()
         except requests.exceptions.RequestException as e:
@@ -472,24 +435,10 @@ class OpenTargets(DataSource):
             {
                 "gene_symbol": row['target']['approvedSymbol'],
                 "source": self.source_name,
-                "score": row['score'],
-                "evidence": [] 
+                "t_score": row['score'],
+                "evidence": []
             }
             for row in associations
         ]
         final_df = pd.DataFrame(processed_data)
-        if final_df.empty:
-            return final_df
-        
-        # Rename original score for clarity
-        final_df.rename(columns={'score': 'raw_score'}, inplace=True)
-        
-        # Min-Max Scaling
-        min_s = final_df['raw_score'].min()
-        max_s = final_df['raw_score'].max()
-        if max_s == min_s:
-            final_df['score'] = 1.0
-        else:
-            final_df['score'] = (final_df['raw_score'] - min_s) / (max_s - min_s)
-            
-        return final_df[['gene_symbol', 'source', 'score', 'evidence']].sort_values(by='score', ascending=False).reset_index(drop=True)
+        return final_df[['gene_symbol', 'source', 't_score', 'evidence']].sort_values(by='t_score', ascending=False).reset_index(drop=True)

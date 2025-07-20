@@ -25,23 +25,36 @@
 
             <p>GetGPT (Genetic variants, differentially Expressed genes, and drug Targets) is an interactive platform that unifies disease-gene analysis into a single pipeline to accelerate hypothesis generation and drug discovery. The project is led by Sumanth Chandrupatla, Andrew Trotter, Kevin Song, and Jake Chen.</p>
 
-            <h2>Core Functionality</h2>
+            <h2>Methodology</h2>
 
-            <p>The platform's primary purpose is to generate comprehensive gene lists for a given disease by aggregating data from multiple sources to provide a holistic view of disease genetics.</p>
+            <p>GetGPT integrates data from multiple sources to generate a ranked list of genes associated with a given disease. The process involves three main stages: data retrieval, scoring, and pathway analysis.</p>
 
-            <h3>Gene List Creation</h3>
-
-            <p>GetGPT generates integrated gene lists by aggregating data from multiple leading databases:</p>
-
+            <h3>1. Data Sources and Retrieval</h3>
+            <p>The platform aggregates gene-disease associations from three primary sources:</p>
             <ul>
-                <li><strong>GWAS Catalog:</strong> The platform retrieves genetic associations from the GWAS Catalog.</li>
-                <li><strong>RummaGEO:</strong> It identifies relevant gene sets from the Gene Expression Omnibus (GEO) using RummaGEO.</li>
-                <li><strong>OpenTargets:</strong> It compiles a list of drug targets associated with the disease from OpenTargets.</li>
+                <li><strong>Genetic Associations (G):</strong> Data is sourced from the <strong>GWAS Catalog</strong>. The platform retrieves studies related to the specified disease (using its EFO identifier) and extracts genes reported in association with significant SNPs (p-value < 5e-8).</li>
+                <li><strong>Gene Expression (E):</strong> We leverage <strong>RummaGEO</strong> to identify relevant gene expression studies from the Gene Expression Omnibus (GEO). The process begins by using a pre-compiled lookup map to find GEO studies that have been annotated with the specific disease EFO term. The gene lists from all identified studies are then aggregated into a master list for analysis. We chose <strong>GSEApy</strong> for gene set enrichment analysis due to its robust, widely-accepted implementation of the GSEA algorithm and its seamless integration with Python. The master gene list is tested for enrichment against the <strong>DisGeNET</strong> gene set library, which contains curated gene-disease associations. This multi-step process ensures that the resulting E-Score is based on a comprehensive and disease-relevant set of expression data.</li>
+                <li><strong>Drug Targets (T):</strong> Information is pulled from <strong>OpenTargets</strong>. The platform queries their API for a list of genes that are known or predicted drug targets for the specified disease.</li>
             </ul>
 
-            <h3>Semantic Search</h3>
+            <h3>2. Scoring and Ranking</h3>
+            <p>Each gene is assigned three scores, corresponding to the data sources, which are then combined into an overall score:</p>
+            <ul>
+                <li><strong>G-Score (Genetic Score):</strong> Calculated from GWAS Catalog data. It is the <strong>-log10(p-value)</strong> of the most significant SNP associated with the gene. A higher score indicates stronger statistical evidence from genetic studies.</li>
+                <li><strong>E-Score (Expression Score):</strong> Derived from RummaGEO and GSEApy analysis. It is the <strong>-log10(Adjusted P-value)</strong> from the enrichment analysis. This score reflects the gene's significance in disease-relevant expression datasets.</li>
+                <li><strong>T-Score (Target Score):</strong> This is the <strong>overall association score</strong> provided directly by OpenTargets, which integrates multiple evidence types (e.g., genetic, literature, clinical).</li>
+                <li><strong>Overall Score:</strong> A final integrated score is calculated as a <strong>weighted average</strong> of the G, E, and T scores. This provides a single, comprehensive metric to rank genes by their overall relevance to the disease.</li>
+            </ul>
 
-            <p>The platform uses advanced semantic search capabilities to help researchers find the most relevant EFO (Experimental Factor Ontology) terms for their queries, ensuring that the subsequent gene list generation is as accurate as possible.</p>
+            <h3>3. Pathway and Gene Cluster Analysis with PAGER</h3>
+            <p>After generating the final gene list, GetGPT utilizes the <strong>PAGER (Pathways, Annotated-lists and Gene signatures Electronic Repository)</strong> tool for downstream analysis. By submitting the integrated gene list to PAGER, researchers can perform gene clustering and pathway enrichment analysis to identify biological pathways, molecular functions, and cellular components that are over-represented in the gene set. This helps in understanding the collective biological context of the identified genes and can reveal novel insights into disease mechanisms.</p>
+
+            <h3>4. Semantic Search and Ontology</h3>
+            <p>To ensure accurate mapping of user queries to standardized disease terms, GetGPT employs a semantic search model. This is crucial for retrieving the correct data from the various sources.</p>
+            <ul>
+                <li><strong>Embedding Model:</strong> We use the <code>pritamdeka/S-PubMedBert-MS-MARCO</code> model, a SentenceTransformer fine-tuned on biomedical literature, to generate embeddings for disease names and descriptions.</li>
+                <li><strong>Ontology Source:</strong> The search is performed against the <strong>Experimental Factor Ontology (EFO)</strong>, which provides a systematic description of experimental variables in biomedical research. This ensures that queries like "Alzheimer's" are correctly mapped to the official EFO term (e.g., <code>EFO:0000249</code>).</li>
+            </ul>
         </main>
         <footer>
             <p>
@@ -49,5 +62,6 @@
             </p>
         </footer>
     </div>
+    <script src="/static/scripts.js"></script>
 </body>
 </html>

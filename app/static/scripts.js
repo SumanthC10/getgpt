@@ -111,7 +111,7 @@ diseaseQueryInput.addEventListener('keypress', (event) => {
             row.innerHTML = `
                 <td>${gene.gene_symbol}</td>
                 <td>${Array.isArray(gene.source) ? gene.source.join(', ') : gene.source}</td>
-                <td>${gene.score.toFixed(4)}</td>
+                <td>${gene.overall_score.toFixed(4)}</td>
                 <td>${formatEvidence(gene.evidence)}</td>
                 <td>${gene.efo_id}</td>
             `;

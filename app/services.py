@@ -106,27 +106,45 @@ def get_gene_list(disease_id: str = None, query: str = None) -> Dict[str, Any]:
             aggregated_genes[symbol] = {
                 'gene_symbol': symbol,
                 'source': set(),
-                'score': 0,
+                'g_score': 0,
+                'e_score': 0,
+                't_score': 0,
                 'evidence': []
             }
         
-        # Combine sources and evidence
+        # Aggregate sources and evidence
         aggregated_genes[symbol]['source'].add(gene['source'])
         if gene.get('evidence'):
             aggregated_genes[symbol]['evidence'].extend(gene['evidence'])
         
-        # Keep the highest score
-        if gene['score'] > aggregated_genes[symbol]['score']:
-            aggregated_genes[symbol]['score'] = gene['score']
+        # Store individual scores, keeping the max if a gene appears in one source multiple times
+        if 'g_score' in gene:
+            aggregated_genes[symbol]['g_score'] = max(aggregated_genes[symbol]['g_score'], gene['g_score'])
+        if 'e_score' in gene:
+            aggregated_genes[symbol]['e_score'] = max(aggregated_genes[symbol]['e_score'], gene['e_score'])
+        if 't_score' in gene:
+            aggregated_genes[symbol]['t_score'] = max(aggregated_genes[symbol]['t_score'], gene['t_score'])
 
-    # Convert sets to sorted lists for consistent output
+    # --- Step 4: Calculate overall score and finalize list ---
     final_gene_list = []
     for gene_data in aggregated_genes.values():
+        # Define weights
+        w_g, w_e, w_t = 1.0, 1.0, 1.0
+        
+        g = gene_data['g_score']
+        e = gene_data['e_score']
+        t = gene_data['t_score']
+        
+        # Calculate weighted average, accounting for missing scores
+        numerator = (w_g * g) + (w_e * e) + (w_t * t)
+        denominator = w_g * (1 if g > 0 else 0) + w_e * (1 if e > 0 else 0) + w_t * (1 if t > 0 else 0)
+        
+        gene_data['overall_score'] = numerator / denominator if denominator > 0 else 0
         gene_data['source'] = sorted(list(gene_data['source']))
         final_gene_list.append(gene_data)
 
-    # Sort by score descending
-    final_gene_list.sort(key=lambda x: x['score'], reverse=True)
+    # Sort by overall_score descending
+    final_gene_list.sort(key=lambda x: x['overall_score'], reverse=True)
      
     return {"results": final_gene_list}
 

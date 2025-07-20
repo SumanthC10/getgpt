@@ -33,9 +33,12 @@ class GetListInput(BaseModel):
 
 class Gene(BaseModel):
     gene_symbol: str
-    source: List[str]  # Changed from str to List[str]
-    score: float
-    evidence: Any  # Can be a list of strings, dicts, or empty
+    source: List[str]
+    g_score: float = Field(default=0, description="Score from GWAS Catalog, based on the -log10(p-value) of the most significant SNP associated with the gene.")
+    e_score: float = Field(default=0, description="Score from RummaGEO, based on the enrichment of the gene in relevant GEO studies, calculated via GSEApy.")
+    t_score: float = Field(default=0, description="Score from OpenTargets, representing the overall association score between the gene and the disease.")
+    overall_score: float = Field(..., description="A weighted average of the G, E, and T scores, providing a comprehensive measure of the gene's relevance to the disease.")
+    evidence: Any
 
 class GeneListResponse(BaseModel):
     results: List[Gene]
