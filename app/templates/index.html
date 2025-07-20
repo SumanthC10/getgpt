@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disease Gene Explorer</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Disease Gene Explorer</h1>
+        
+        <div class="search-container">
+            <input type="text" id="disease-query" placeholder="Enter a disease name...">
+            <select id="top-k-select">
+                <option value="5">Top 5</option>
+                <option value="10">Top 10</option>
+                <option value="20">Top 20</option>
+            </select>
+            <button id="search-btn">Search</button>
+        </div>
+
+        <div id="efo-results-container">
+            <h2>Semantic Search Results</h2>
+            <ul id="efo-results-list"></ul>
+            <button id="fetch-genes-btn" style="display:none;">Fetch Genes for Selected</button>
+        </div>
+
+        <div id="gene-list-container">
+            <h2>Gene List</h2>
+            <button id="combine-genes-btn" style="display:none;">Combine Gene Lists</button>
+            <div id="gene-tables"></div>
+        </div>
+    </div>
+
+    <script src="/static/scripts.js"></script>
+</body>
+</html>

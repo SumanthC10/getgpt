@@ -6,6 +6,8 @@ import requests
 import json
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from sentence_transformers import SentenceTransformer
+from sentence_transformers.util import cos_sim
 from abc import ABC, abstractmethod
 import collections
 import gseapy as gp
@@ -143,14 +145,19 @@ class GWASCatalog(DataSource):
         return f"Data from {self.source_name}"
     
     def get_genes(self, disease_id: str) -> pd.DataFrame:
+        print(f"\n[DEBUG:GWASCatalog] Received disease_id: {disease_id}")
         try:
+            # Normalize EFO ID to use colon
+            normalized_efo_id = disease_id.replace(':', '_')
+            print(f"[DEBUG:GWASCatalog] Normalized EFO ID: {normalized_efo_id}")
             # 1. Find all studies for the given disease ID
-            studies_df = get_studies_by_efo_id(disease_id).studies
+            studies_df = get_studies_by_efo_id(normalized_efo_id).studies
             if studies_df.empty:
-                print(f"Info: No studies found for disease ID {disease_id}")
+                print(f"[DEBUG:GWASCatalog] Info: No studies found for disease ID {normalized_efo_id}")
                 return pd.DataFrame()
+            print(f"[DEBUG:GWASCatalog] Found {len(studies_df)} studies for {normalized_efo_id}")
         except Exception as e:
-            print(f"Error fetching studies for disease ID {disease_id}: {e}")
+            print(f"[DEBUG:GWASCatalog] Error fetching studies for disease ID {normalized_efo_id}: {e}")
             return pd.DataFrame()
 
         all_results = []
@@ -224,8 +231,30 @@ class GWASCatalog(DataSource):
 
 
 class RummaGEO:
-    def __init__(self, source_name="RummaGEO"):
+    def __init__(self, source_name="RummaGEO", efo_mapping_file="data/efo.ols.sssom.tsv"):
         self.source_name = source_name
+        self.efo_mapping_file = efo_mapping_file
+
+    def _get_disease_name_from_efo_id(self, efo_id: str) -> str | None:
+        """Finds the disease name for a given EFO ID from the mapping file."""
+        print(f"\n[DEBUG:RummaGEO] Looking up EFO ID: {efo_id}")
+        normalized_efo_id = efo_id.replace('_', ':')
+        print(f"[DEBUG:RummaGEO] Normalized EFO ID for lookup: {normalized_efo_id}")
+        try:
+            with open(self.efo_mapping_file, 'r') as f:
+                for i, line in enumerate(f):
+                    if line.startswith('#'):
+                        continue
+                    parts = line.strip().split('\t')
+                    if len(parts) > 4 and parts[0] == normalized_efo_id:
+                        disease_name = parts[4]
+                        print(f"[DEBUG:RummaGEO] Found mapping: {normalized_efo_id} -> {disease_name}")
+                        return disease_name
+            print(f"[DEBUG:RummaGEO] EFO ID {normalized_efo_id} not found in mapping file.")
+            return None
+        except FileNotFoundError:
+            print(f"[DEBUG:RummaGEO] Error: EFO mapping file not found at {self.efo_mapping_file}")
+            return None
 
     def get_dsource(self):
         # Placeholder for fetching data from the RummaGEO
@@ -233,23 +262,24 @@ class RummaGEO:
 
     def _filter_gsea_with_llm(self, gsea_results: pd.DataFrame, disease_name: str) -> pd.DataFrame:
         """
-        Placeholder for using an LLM to select the most relevant GSEA results.
-
-        For now, this function sorts by Adjusted P-value and returns the top 5.
+        Uses an embedding model to select the most relevant GSEA results.
         """
-        print("\nINFO: Using placeholder for LLM filtering of GSEA results. Selecting top 5 by Adjusted P-value.")
+        print("\nINFO: Using embedding model to filter GSEA results.")
         if gsea_results.empty:
             return pd.DataFrame()
-        
-        # --- LLM Placeholder Logic ---
-        # prompt = f"From the following GSEA results for '{disease_name}', which are the 5 most relevant terms? {gsea_results.to_string()}"
-        # best_terms_json = call_llm(prompt)
-        # best_terms_df = pd.read_json(best_terms_json)
-        # return best_terms_df
-        # ---------------------------
 
-        # Default behavior: sort by p-value and take the top 5
-        return gsea_results.sort_values(by='Adjusted P-value', ascending=True).head(5)
+        model = SentenceTransformer("pritamdeka/S-PubMedBert-MS-MARCO")
+        
+        # Embed the disease name and the GSEA terms
+        disease_embedding = model.encode(disease_name)
+        term_embeddings = model.encode(gsea_results['Term'].tolist())
+        
+        # Calculate cosine similarity
+        similarities = cos_sim(disease_embedding, term_embeddings)
+        gsea_results['similarity'] = similarities[0]
+        
+        # Sort by similarity and return the top 20
+        return gsea_results.sort_values(by='similarity', ascending=False).head(20)
 
     def run_gsea_enrichment(self, gene_list: list, disease_name: str) -> pd.DataFrame:
         """
@@ -301,17 +331,23 @@ class RummaGEO:
             print(f"An error occurred during GSEApy analysis: {e}")
             return pd.DataFrame()
 
-    def get_genes(self, disease_name: str) -> pd.DataFrame:
+    def get_genes(self, disease_id: str) -> pd.DataFrame:
         """
         Finds relevant genes and calculates an evidence-based score using a multi-phase process:
         1. Fetches candidate gene sets related to a disease from RummaGEO.
         2. Filters for the top 20 human studies by silhouette score.
         3. Aggregates genes from these top studies to create a master gene list.
         4. Performs Gene Set Enrichment Analysis (GSEA) on this list.
-        5. Filters GSEA results to find the top 5 most relevant terms (LLM placeholder).
+        5. Filters GSEA results to find the top 20 most relevant terms using an embedding model.
         6. Calculates a final score for each gene based on its association with these top terms.
         """
-        print(f"PHASE 1: Searching for gene sets related to '{disease_name}' via RummaGEO...")
+        print(f"\n[DEBUG:RummaGEO] Received disease_id: {disease_id}")
+        disease_name = self._get_disease_name_from_efo_id(disease_id)
+        if not disease_name:
+            print(f"[DEBUG:RummaGEO] Could not find disease name for EFO ID {disease_id}. Aborting.")
+            return pd.DataFrame()
+
+        print(f"[DEBUG:RummaGEO] PHASE 1: Searching for gene sets related to '{disease_name}' ({disease_id}) via RummaGEO...")
         url = "https://rummageo.com/graphql"
         headers = {"Content-Type": "application/json"}
 
@@ -337,8 +373,9 @@ class RummaGEO:
             
             all_nodes = initial_data.get("data", {}).get("geneSetTermSearch", {}).get("nodes", [])
             if not all_nodes:
-                print(f"No gene sets found for '{disease_name}' on RummaGEO.")
+                print(f"[DEBUG:RummaGEO] No gene sets found for '{disease_name}' on RummaGEO.")
                 return pd.DataFrame()
+            print(f"[DEBUG:RummaGEO] Found {len(all_nodes)} initial gene sets from RummaGEO.")
 
             # --- Filter for Top 20 Human Studies ---
             human_gene_sets = [
@@ -395,8 +432,8 @@ class RummaGEO:
                 print("No GSEA terms remained after filtering. Cannot score genes.")
                 return pd.DataFrame()
             
-            print("\nTop 5 GSEA Terms selected for scoring:")
-            print(top_gsea_terms[['Term', 'Adjusted P-value', 'Genes']].head())
+            print("\nTop 20 GSEA Terms selected for scoring:")
+            print(top_gsea_terms[['Term', 'Adjusted P-value', 'similarity', 'Genes']])
 
             # --- PHASE 5: Calculate Gene Scores from Top Terms ---
             print("\nPHASE 3: Aggregating GSEA results and calculating final scores...")
@@ -453,6 +490,11 @@ class OpenTargets(DataSource):
     
     def get_genes(self, disease_id: str) -> pd.DataFrame:
         """Queries OpenTargets for gene-disease associations."""
+        print(f"\n[DEBUG:OpenTargets] Received disease_id: {disease_id}")
+        # Normalize EFO ID to use colon for the API query
+        normalized_efo_id = disease_id.replace(':', '_')
+        print(f"[DEBUG:OpenTargets] Normalized EFO ID: {normalized_efo_id}")
+
         url = "https://api.platform.opentargets.org/api/v4/graphql"
         query = """
         query associatedTargetsQuery($efoId: String!) {
@@ -467,15 +509,19 @@ class OpenTargets(DataSource):
         }
         """
         try:
-            response = requests.post(url, json={"query": query, "variables": {"efoId": disease_id}})
+            response = requests.post(url, json={"query": query, "variables": {"efoId": normalized_efo_id}})
             response.raise_for_status()
             data = response.json()
         except requests.exceptions.RequestException as e:
-            print(f"OpenTargets query failed: {e}")
+            print(f"[DEBUG:OpenTargets] OpenTargets query failed: {e}")
             return pd.DataFrame()
 
         associations = data.get('data', {}).get('disease', {}).get('associatedTargets', {}).get('rows', [])
-        if not associations: return pd.DataFrame()
+        if not associations:
+            print(f"[DEBUG:OpenTargets] No associations found for {normalized_efo_id}")
+            return pd.DataFrame()
+        
+        print(f"[DEBUG:OpenTargets] Found {len(associations)} associations for {normalized_efo_id}")
 
         processed_data = [
             {

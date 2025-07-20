@@ -1,0 +1,61 @@
+body {
+    font-family: sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 20px;
+    background-color: #f4f4f4;
+}
+
+.container {
+    max-width: 800px;
+    margin: auto;
+    background: #fff;
+    padding: 20px;
+    border-radius: 5px;
+}
+
+.search-container {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+#disease-query {
+    flex-grow: 1;
+    padding: 8px;
+}
+
+#efo-results-list {
+    list-style-type: none;
+    padding: 0;
+}
+
+#efo-results-list li {
+    padding: 5px;
+    border-bottom: 1px solid #ddd;
+}
+
+#efo-results-list li.selected {
+    background-color: #e0e0e0;
+}
+
+button {
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+#gene-tables table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+#gene-tables th, #gene-tables td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+#gene-tables th {
+    background-color: #f2f2f2;
+}
