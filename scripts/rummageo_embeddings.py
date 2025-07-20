@@ -6,7 +6,7 @@ import numpy as np
 import os
 
 # --- Configuration ---
-EFO_EMBEDDINGS_PATH = 'data/subject_embeddings.parquet'
+EFO_EMBEDDINGS_PATH = 'data/efo_embeddings.parquet'
 STUDY_TITLES_PATH = 'data/human_study_titles.tsv'
 GSE_METADATA_PATH = 'data/human-gse-processed-meta.json'
 FINAL_LOOKUP_PATH = 'data/efo_to_gse_lookup.json'
@@ -78,7 +78,7 @@ def generate_and_save_associations():
 
     final_lookup = {}
     for i, efo_row in efo_df.iterrows():
-        efo_id = efo_row['subject_id']
+        efo_id = efo_row['term_id']
         hits = all_hits[i]
         
         semantic_candidates = []

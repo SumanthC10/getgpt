@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About - GetGPT</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script>
+        window.API_BASE_URL = '{{ api_url }}';
+    </script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><a href="/">GetGPT</a></h1>
+            <nav>
+                <button id="dark-mode-toggle">&#9728;</button>
+                <a href="/">Home</a>
+                <a href="/docs">About</a>
+                <a href="/api-docs">API Documentation</a>
+        </nav>
+        </header>
+        <main style="max-width: 100%; overflow-x: auto;">
+            <h1>About GetGPT</h1>
+
+            <p>GetGPT (Genetic variants, differentially Expressed genes, and drug Targets) is an interactive platform that unifies disease-gene analysis into a single pipeline to accelerate hypothesis generation and drug discovery. The project is led by Sumanth Chandrupatla, Andrew Trotter, Kevin Song, and Jake Chen.</p>
+
+            <h2>Core Functionality</h2>
+
+            <p>The platform's primary purpose is to generate comprehensive gene lists for a given disease by aggregating data from multiple sources to provide a holistic view of disease genetics.</p>
+
+            <h3>Gene List Creation</h3>
+
+            <p>GetGPT generates integrated gene lists by aggregating data from multiple leading databases:</p>
+
+            <ul>
+                <li><strong>GWAS Catalog:</strong> The platform retrieves genetic associations from the GWAS Catalog.</li>
+                <li><strong>RummaGEO:</strong> It identifies relevant gene sets from the Gene Expression Omnibus (GEO) using RummaGEO.</li>
+                <li><strong>OpenTargets:</strong> It compiles a list of drug targets associated with the disease from OpenTargets.</li>
+            </ul>
+
+            <h3>Semantic Search</h3>
+
+            <p>The platform uses advanced semantic search capabilities to help researchers find the most relevant EFO (Experimental Factor Ontology) terms for their queries, ensuring that the subsequent gene list generation is as accurate as possible.</p>
+        </main>
+        <footer>
+            <p>
+                Last Updated: Jul 20, 2025
+            </p>
+        </footer>
+    </div>
+</body>
+</html>

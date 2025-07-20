@@ -3,103 +3,173 @@ document.addEventListener('DOMContentLoaded', () => {
     const diseaseQueryInput = document.getElementById('disease-query');
     const topKSelect = document.getElementById('top-k-select');
     const efoResultsList = document.getElementById('efo-results-list');
-    const fetchGenesBtn = document.getElementById('fetch-genes-btn');
-    const geneTablesContainer = document.getElementById('gene-tables');
-    const combineGenesBtn = document.getElementById('combine-genes-btn');
+    const getGenesButton = document.getElementById('get-genes-button');
+    const downloadCsvBtn = document.getElementById('download-csv-btn');
+    const loader = document.getElementById('loader');
 
+    let geneDataTable;
+
+    // --- Utility Functions ---
+    const showLoader = () => loader.style.display = 'flex';
+    const hideLoader = () => loader.style.display = 'none';
+
+    // --- Event Listeners ---
     searchBtn.addEventListener('click', async () => {
         const query = diseaseQueryInput.value.trim();
         const topK = topKSelect.value;
         if (!query) return;
 
-        const response = await fetch(`/v1/efo_search?q=${query}&top_k=${topK}`);
-        const data = await response.json();
-        
-        efoResultsList.innerHTML = '';
-        data.results.forEach(item => {
-            const li = document.createElement('li');
-            li.textContent = `${item.label} (${item.efo_id}) - Score: ${item.score.toFixed(2)}`;
-            li.dataset.efoId = item.efo_id;
-            li.addEventListener('click', () => {
-                li.classList.toggle('selected');
-                const selectedCount = efoResultsList.querySelectorAll('.selected').length;
-                fetchGenesBtn.style.display = selectedCount > 0 ? 'block' : 'none';
+        showLoader();
+        try {
+            const response = await fetch(`${window.API_BASE_URL}/v1/efo_search?q=${query}&top_k=${topK}`);
+            const data = await response.json();
+            
+            efoResultsList.innerHTML = '';
+            data.results.forEach(item => {
+                const li = document.createElement('li');
+                li.textContent = `${item.label} (${item.efo_id}) - Score: ${item.score.toFixed(2)}`;
+                li.dataset.efoId = item.efo_id;
+                li.dataset.score = item.score;
+                li.addEventListener('click', () => {
+                    li.classList.toggle('selected');
+                    const selectedCount = efoResultsList.querySelectorAll('.selected').length;
+                    getGenesButton.style.display = selectedCount > 0 ? 'block' : 'none';
+                });
+                efoResultsList.appendChild(li);
             });
-            efoResultsList.appendChild(li);
-        });
+        } catch (error) {
+            console.error("Error fetching EFO results:", error);
+        } finally {
+            hideLoader();
+        }
+    });
+diseaseQueryInput.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter' || event.keyCode === 13) {
+            event.preventDefault();
+            searchBtn.click();
+        }
     });
 
-    fetchGenesBtn.addEventListener('click', async () => {
+    getGenesButton.addEventListener('click', async () => {
         const selectedItems = efoResultsList.querySelectorAll('.selected');
         if (selectedItems.length === 0) return;
 
-        geneTablesContainer.innerHTML = '';
-        for (const item of selectedItems) {
-            const efoId = item.dataset.efoId;
-            const response = await fetch('/v1/get-list', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ disease_id: efoId })
-            });
-            const data = await response.json();
-            createGeneTable(efoId, data.results);
+        showLoader();
+        try {
+            const allGenes = [];
+            for (const item of selectedItems) {
+                const efoId = item.dataset.efoId;
+                const response = await fetch(`${window.API_BASE_URL}/v1/get-list`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ disease_id: efoId })
+                });
+                const data = await response.json();
+                data.results.forEach(gene => {
+                    gene.efo_id = efoId; // Add EFO ID to each gene
+                    allGenes.push(gene);
+                });
+            }
+            populateGeneTable(allGenes);
+            downloadCsvBtn.style.display = 'block';
+        } catch (error) {
+            console.error("Error fetching gene list:", error);
+        } finally {
+            hideLoader();
         }
-        combineGenesBtn.style.display = 'block';
     });
 
-    combineGenesBtn.addEventListener('click', () => {
-        const allTables = geneTablesContainer.querySelectorAll('table');
-        const combinedData = {};
-
-        allTables.forEach(table => {
-            const efoId = table.dataset.efoId;
-            const rows = table.querySelectorAll('tbody tr');
-            rows.forEach(row => {
-                const geneSymbol = row.cells[0].textContent;
-                if (!combinedData[geneSymbol]) {
-                    combinedData[geneSymbol] = { efoIds: new Set() };
-                }
-                combinedData[geneSymbol].efoIds.add(efoId);
-            });
+    downloadCsvBtn.addEventListener('click', () => {
+        const tableData = geneDataTable.rows().data().toArray();
+        let csvContent = "data:text/csv;charset=utf-8,Gene,Source,Score,Evidence,EFO ID\n";
+        
+        tableData.forEach(rowArray => {
+            const row = rowArray.map(cell => `"${cell.toString().replace(/"/g, '""')}"`).join(",");
+            csvContent += row + "\n";
         });
 
-        createCombinedTable(combinedData);
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "gene_list.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     });
 
-    function createGeneTable(efoId, genes) {
-        const table = document.createElement('table');
-        table.dataset.efoId = efoId;
-        const thead = document.createElement('thead');
-        const tbody = document.createElement('tbody');
-        
-        thead.innerHTML = `<tr><th colspan="2">${efoId}</th></tr><tr><th>Gene Symbol</th><th>Source</th></tr>`;
-        
+    // --- Table Functions ---
+    function populateGeneTable(genes) {
+        if (geneDataTable) {
+            geneDataTable.destroy();
+        }
+
+        const tableBody = document.querySelector('#gene-table tbody');
+        tableBody.innerHTML = ''; // Clear existing data
+
         genes.forEach(gene => {
-            const row = tbody.insertRow();
-            row.insertCell().textContent = gene.gene_symbol;
-            row.insertCell().textContent = gene.source;
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${gene.gene_symbol}</td>
+                <td>${Array.isArray(gene.source) ? gene.source.join(', ') : gene.source}</td>
+                <td>${gene.score.toFixed(4)}</td>
+                <td>${formatEvidence(gene.evidence)}</td>
+                <td>${gene.efo_id}</td>
+            `;
+            tableBody.appendChild(row);
         });
 
-        table.append(thead, tbody);
-        geneTablesContainer.appendChild(table);
+        geneDataTable = $('#gene-table').DataTable({
+            "pageLength": 10,
+            "responsive": true,
+            "destroy": true
+        });
     }
 
-    function createCombinedTable(combinedData) {
-        const table = document.createElement('table');
-        const thead = document.createElement('thead');
-        const tbody = document.createElement('tbody');
-
-        thead.innerHTML = '<tr><th>Gene Symbol</th><th>Associated EFO IDs</th></tr>';
-
-        for (const geneSymbol in combinedData) {
-            const row = tbody.insertRow();
-            row.insertCell().textContent = geneSymbol;
-            row.insertCell().textContent = Array.from(combinedData[geneSymbol].efoIds).join(', ');
+    function formatEvidence(evidence) {
+        if (!evidence || evidence.length === 0) return 'N/A';
+        if (typeof evidence[0] === 'string') {
+            return evidence.join(', ');
         }
-
-        table.append(thead, tbody);
-        geneTablesContainer.innerHTML = ''; // Clear existing tables
-        geneTablesContainer.appendChild(table);
-        combineGenesBtn.style.display = 'none';
+        if (typeof evidence[0] === 'object' && evidence[0] !== null) {
+            return evidence.map(item => item.rsid || JSON.stringify(item)).join(', ');
+        }
+        return JSON.stringify(evidence);
     }
+
+    // --- Initialization ---
 });
+// --- Dark Mode ---
+    const darkModeToggle = document.getElementById('dark-mode-toggle');
+
+    const enableDarkMode = () => {
+        document.body.classList.add('dark-mode');
+        localStorage.setItem('darkMode', 'enabled');
+        if (darkModeToggle) {
+            darkModeToggle.innerHTML = '&#9790;'; // Moon icon
+        }
+    };
+
+    const disableDarkMode = () => {
+        document.body.classList.remove('dark-mode');
+        localStorage.setItem('darkMode', 'disabled');
+        if (darkModeToggle) {
+            darkModeToggle.innerHTML = '&#9728;'; // Sun icon
+        }
+    };
+
+    // Check for saved preference on page load
+    if (localStorage.getItem('darkMode') === 'enabled') {
+        enableDarkMode();
+    } else {
+        disableDarkMode();
+    }
+
+    if (darkModeToggle) {
+        darkModeToggle.addEventListener('click', () => {
+            if (localStorage.getItem('darkMode') !== 'enabled') {
+                enableDarkMode();
+            } else {
+                disableDarkMode();
+            }
+        });
+    }

@@ -12,6 +12,21 @@ from abc import ABC, abstractmethod
 import collections
 import gseapy as gp
 from pandasgwas import get_studies_by_efo_id , get_associations_by_study_id
+from scipy.interpolate import PchipInterpolator
+
+# Official burden knots (p-value ↔ score)
+# p_knots must be in increasing order for -log10(p) to be increasing.
+# We reverse both arrays to make the input to PchipInterpolator valid.
+p_knots = np.array([1.0, 1e-7, 1e-10, 1e-13, 1e-17])
+s_knots = np.array([0.0, 0.25, 0.50, 0.75, 1.00])
+
+# Work in -log10 space for numerical stability
+x = -np.log10(p_knots)
+spl = PchipInterpolator(x, s_knots, extrapolate=True)
+
+def ot_smooth_score(p):
+    p = np.maximum(p, np.nextafter(0, 1))      # avoid log(0)
+    return np.clip(spl(-np.log10(p)), 0, 1)
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -226,257 +241,187 @@ class GWASCatalog(DataSource):
 
         aggregated_df = final_df.groupby('gene_symbol').agg(agg_logic).reset_index()
 
-        return aggregated_df
+        if aggregated_df.empty:
+            return aggregated_df
+
+        # Apply the new OpenTargets-style smoothing score
+        aggregated_df['score'] = ot_smooth_score(aggregated_df['score'].astype(float))
+
+        return aggregated_df[['gene_symbol', 'source', 'score', 'evidence']].sort_values(by='score', ascending=False).reset_index(drop=True)
 
 
 
-class RummaGEO:
-    def __init__(self, source_name="RummaGEO", efo_mapping_file="data/efo.ols.sssom.tsv"):
-        self.source_name = source_name
-        self.efo_mapping_file = efo_mapping_file
+class RummaGEO(DataSource):
+    def __init__(self, source_name="RummaGEO", lookup_file="data/efo_to_gse_lookup.json", efo_ontology_file="data/efo_ontology_terms.tsv"):
+        super().__init__(source_name)
+        self.graphql_url = "https://rummageo.com/graphql"
+        self.headers = {"Content-Type": "application/json"}
+        self.efo_ontology_file = efo_ontology_file
+        try:
+            with open(lookup_file, 'r') as f:
+                self.efo_to_gse = json.load(f)
+            print("[DEBUG:RummaGEO] Successfully loaded EFO to GSE lookup.")
+        except FileNotFoundError:
+            print(f"[DEBUG:RummaGEO] Error: EFO to GSE lookup file not found at {lookup_file}")
+            self.efo_to_gse = {}
+
+    def get_dsource(self):
+        return f"Data from {self.source_name}"
 
     def _get_disease_name_from_efo_id(self, efo_id: str) -> str | None:
-        """Finds the disease name for a given EFO ID from the mapping file."""
-        print(f"\n[DEBUG:RummaGEO] Looking up EFO ID: {efo_id}")
+        """Finds the disease name for a given EFO ID from the ontology file."""
         normalized_efo_id = efo_id.replace('_', ':')
-        print(f"[DEBUG:RummaGEO] Normalized EFO ID for lookup: {normalized_efo_id}")
         try:
-            with open(self.efo_mapping_file, 'r') as f:
-                for i, line in enumerate(f):
+            with open(self.efo_ontology_file, 'r') as f:
+                for line in f:
                     if line.startswith('#'):
                         continue
                     parts = line.strip().split('\t')
-                    if len(parts) > 4 and parts[0] == normalized_efo_id:
-                        disease_name = parts[4]
-                        print(f"[DEBUG:RummaGEO] Found mapping: {normalized_efo_id} -> {disease_name}")
-                        return disease_name
-            print(f"[DEBUG:RummaGEO] EFO ID {normalized_efo_id} not found in mapping file.")
+                    if len(parts) > 1 and parts[0] == normalized_efo_id:
+                        return parts[1]
             return None
         except FileNotFoundError:
-            print(f"[DEBUG:RummaGEO] Error: EFO mapping file not found at {self.efo_mapping_file}")
+            print(f"[DEBUG:RummaGEO] Error: EFO ontology file not found at {self.efo_ontology_file}")
             return None
 
-    def get_dsource(self):
-        # Placeholder for fetching data from the RummaGEO
-        return f"Data from {self.source_name}"
-
-    def _filter_gsea_with_llm(self, gsea_results: pd.DataFrame, disease_name: str) -> pd.DataFrame:
-        """
-        Uses an embedding model to select the most relevant GSEA results.
-        """
-        print("\nINFO: Using embedding model to filter GSEA results.")
-        if gsea_results.empty:
-            return pd.DataFrame()
-
-        model = SentenceTransformer("pritamdeka/S-PubMedBert-MS-MARCO")
-        
-        # Embed the disease name and the GSEA terms
-        disease_embedding = model.encode(disease_name)
-        term_embeddings = model.encode(gsea_results['Term'].tolist())
-        
-        # Calculate cosine similarity
-        similarities = cos_sim(disease_embedding, term_embeddings)
-        gsea_results['similarity'] = similarities[0]
-        
-        # Sort by similarity and return the top 20
-        return gsea_results.sort_values(by='similarity', ascending=False).head(20)
-
-    def run_gsea_enrichment(self, gene_list: list, disease_name: str) -> pd.DataFrame:
-        """
-        Performs gene set enrichment analysis using GSEApy against the DisGeNET
-        database to find associations between a gene list and a disease.
-
-        Args:
-            gene_list: A list of gene symbols.
-            disease_name: The disease term to search for in the results.
-
-        Returns:
-            A pandas DataFrame containing the complete enrichment results.
-            Returns an empty DataFrame if an error occurs.
-        """
-        if not gene_list:
-            print("Error: The provided gene list is empty.")
-            return pd.DataFrame()
-            
-        print(f"\nRunning GSEApy enrichment for '{disease_name}' with {len(gene_list)} genes...")
-        
-        try:
-            # Perform enrichment analysis using the DisGeNET library
-            enr_results = gp.enrichr(
-                gene_list=gene_list,
-                gene_sets='DisGeNET',
-                organism='human',
-                outdir=None,  # Suppress file output
-                cutoff=1      # Return all results regardless of p-value
-            )
-
-            if enr_results is None or enr_results.results.empty:
-                print("GSEApy analysis returned no results.")
-                return pd.DataFrame()
-
-            results_df = enr_results.results
-            print("--- GSEApy Analysis Complete ---")
-            
-            # Search for the specific disease term in the results for logging purposes
-            disease_specific_results = results_df[results_df['Term'].str.contains(disease_name, case=False)]
-
-            if not disease_specific_results.empty:
-                print(f"Found initial association for '{disease_name}'.")
-            else:
-                print(f"Could not find a specific string match for '{disease_name}' in GSEA results.")
-
-            return results_df
-
-        except Exception as e:
-            print(f"An error occurred during GSEApy analysis: {e}")
-            return pd.DataFrame()
-
-    def get_genes(self, disease_id: str) -> pd.DataFrame:
-        """
-        Finds relevant genes and calculates an evidence-based score using a multi-phase process:
-        1. Fetches candidate gene sets related to a disease from RummaGEO.
-        2. Filters for the top 20 human studies by silhouette score.
-        3. Aggregates genes from these top studies to create a master gene list.
-        4. Performs Gene Set Enrichment Analysis (GSEA) on this list.
-        5. Filters GSEA results to find the top 20 most relevant terms using an embedding model.
-        6. Calculates a final score for each gene based on its association with these top terms.
-        """
-        print(f"\n[DEBUG:RummaGEO] Received disease_id: {disease_id}")
-        disease_name = self._get_disease_name_from_efo_id(disease_id)
-        if not disease_name:
-            print(f"[DEBUG:RummaGEO] Could not find disease name for EFO ID {disease_id}. Aborting.")
-            return pd.DataFrame()
-
-        print(f"[DEBUG:RummaGEO] PHASE 1: Searching for gene sets related to '{disease_name}' ({disease_id}) via RummaGEO...")
-        url = "https://rummageo.com/graphql"
-        headers = {"Content-Type": "application/json"}
-
-        discovery_query = """
-        query GeneSetTermSearchQuery($terms: [String]!) {
-          geneSetTermSearch(terms: $terms) {
-            nodes {
-              silhouetteScore
-              geneSetById { id, nodeId, term, species }
+    def _fetch_genes_for_gse(self, gse_id: str) -> list:
+        """Fetches genes for a single study given its GSE ID."""
+        query = """
+        query GeneSetGsesQuery($gse: String!) {
+          geneSetGses(condition: {gse: $gse}) {
+            edges {
+              node {
+                geneSetById {
+                  genes {
+                    edges {
+                      node {
+                        symbol
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }
         """
-        
         try:
-            response = requests.post(url, json={
-                "operationName": "GeneSetTermSearchQuery",
-                "query": discovery_query,
-                "variables": {"terms": [disease_name]}
+            response = requests.post(self.graphql_url, json={
+                "operationName": "GeneSetGsesQuery", "query": query, "variables": {"gse": gse_id}
             })
             response.raise_for_status()
-            initial_data = response.json()
-            
-            all_nodes = initial_data.get("data", {}).get("geneSetTermSearch", {}).get("nodes", [])
-            if not all_nodes:
-                print(f"[DEBUG:RummaGEO] No gene sets found for '{disease_name}' on RummaGEO.")
-                return pd.DataFrame()
-            print(f"[DEBUG:RummaGEO] Found {len(all_nodes)} initial gene sets from RummaGEO.")
+            data = response.json()
+            gse_edges = data.get("data", {}).get("geneSetGses", {}).get("edges", [])
+            if not gse_edges: return []
+            gene_set_by_id = gse_edges[0].get('node', {}).get('geneSetById', {})
+            if not gene_set_by_id: return []
+            gene_edges = gene_set_by_id.get("genes", {}).get("edges", [])
+            return [edge['node']['symbol'] for edge in gene_edges if edge.get('node', {}).get('symbol')]
+        except (requests.exceptions.RequestException, KeyError, TypeError, IndexError) as e:
+            print(f"[DEBUG:RummaGEO] Could not fetch genes for {gse_id}. Error: {e}")
+            return []
 
-            # --- Filter for Top 20 Human Studies ---
-            human_gene_sets = [
-                node for node in all_nodes 
-                if node.get('geneSetById') and node['geneSetById'].get('species') == 'human'
-            ]
-            if not human_gene_sets:
-                print(f"No human-specific gene sets found for '{disease_name}'.")
-                return pd.DataFrame()
-
-            sorted_sets = sorted(human_gene_sets, key=lambda x: x.get('silhouetteScore') or -1, reverse=True)
-            top_20_sets = sorted_sets[:20]
-            
-            # --- PHASE 2: Fetch and Aggregate Genes ---
-            print(f"PHASE 2: Fetching genes for the top {len(top_20_sets)} studies...")
-            gene_details_query = """
-            query GetGenesById($nodeId: ID!) {
-              geneSetByNodeId(nodeId: $nodeId) { genes { edges { node { symbol } } } }
-            }
-            """
-            
-            master_gene_list = set()
-            for gene_set in top_20_sets:
-                gene_set_info = gene_set.get('geneSetById')
-                if not gene_set_info or not gene_set_info.get('nodeId'):
-                    continue
-
-                details_response = requests.post(url, json={
-                    "operationName": "GetGenesById",
-                    "query": gene_details_query, 
-                    "variables": {"nodeId": gene_set_info['nodeId']}
-                })
-                details_response.raise_for_status()
-                details_data = details_response.json()
-                
-                gene_edges = details_data.get("data",{}).get("geneSetByNodeId",{}).get("genes",{}).get("edges",[])
-                for edge in gene_edges:
-                    if symbol := edge.get('node', {}).get('symbol'):
-                        master_gene_list.add(symbol)
-
-            if not master_gene_list:
-                print("No genes found in the top 20 sets.")
-                return pd.DataFrame()
-
-            # --- PHASE 3: Run GSEA on Aggregated Gene List ---
-            gsea_results_df = self.run_gsea_enrichment(list(master_gene_list), disease_name)
-            if gsea_results_df.empty:
-                print("GSEA analysis did not produce results. Cannot calculate gene scores.")
+    def _run_gsea_enrichment(self, gene_list: list, disease_name: str) -> pd.DataFrame:
+        """Performs GSEApy enrichment and filters results."""
+        if not gene_list:
+            print("[DEBUG:RummaGEO] GSEA enrichment called with an empty gene list.")
+            return pd.DataFrame()
+        print(f"\n[DEBUG:RummaGEO] Running GSEApy enrichment for '{disease_name}' with {len(gene_list)} genes...")
+        try:
+            enr_results = gp.enrichr(
+                gene_list=gene_list, gene_sets='DisGeNET', organism='human', outdir=None, cutoff=1
+            )
+            if enr_results is None or enr_results.results.empty:
+                print("[DEBUG:RummaGEO] GSEApy analysis returned no results.")
                 return pd.DataFrame()
             
-            # --- PHASE 4: Filter GSEA Results (LLM Placeholder) ---
-            top_gsea_terms = self._filter_gsea_with_llm(gsea_results_df, disease_name)
-            if top_gsea_terms.empty:
-                print("No GSEA terms remained after filtering. Cannot score genes.")
-                return pd.DataFrame()
+            results_df = enr_results.results
+            print("[DEBUG:RummaGEO] GSEApy Analysis Complete. Filtering results...")
+
+            # Filter using sentence transformer
+            model = SentenceTransformer("pritamdeka/S-PubMedBert-MS-MARCO")
+            disease_embedding = model.encode(disease_name)
+            term_embeddings = model.encode(results_df['Term'].tolist())
+            similarities = cos_sim(disease_embedding, term_embeddings)
+            results_df['similarity'] = similarities[0]
             
-            print("\nTop 20 GSEA Terms selected for scoring:")
-            print(top_gsea_terms[['Term', 'Adjusted P-value', 'similarity', 'Genes']])
+            return results_df.sort_values(by='similarity', ascending=False).head(20)
+        except Exception as e:
+            print(f"[DEBUG:RummaGEO] An error occurred during GSEApy analysis: {e}")
+            return pd.DataFrame()
 
-            # --- PHASE 5: Calculate Gene Scores from Top Terms ---
-            print("\nPHASE 3: Aggregating GSEA results and calculating final scores...")
-            gene_evidence = collections.defaultdict(lambda: {'p_values': [], 'terms': set()})
+    def get_genes(self, disease_id: str) -> pd.DataFrame:
+        """
+        Combines gene fetching from RummaGEO with GSEApy enrichment analysis to score genes.
+        """
+        print(f"\n[DEBUG:RummaGEO] Received disease_id: {disease_id}")
+        
+        # 1. Fetch master gene list from RummaGEO
+        studies_from_lookup = self.efo_to_gse.get(disease_id, [])
+        if not studies_from_lookup:
+            print(f"[DEBUG:RummaGEO] No studies found for {disease_id} in the lookup file.")
+            return pd.DataFrame()
 
-            for _, row in top_gsea_terms.iterrows():
-                p_val = row['Adjusted P-value']
-                term = row['Term']
-                genes_in_term = row['Genes'].split(';')
-                for gene in genes_in_term:
+        gene_to_gses = collections.defaultdict(list)
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_gse = {executor.submit(self._fetch_genes_for_gse, study['gse_id']): study['gse_id'] for study in studies_from_lookup}
+            for future in as_completed(future_to_gse):
+                gse_id = future_to_gse[future]
+                genes = future.result()
+                for gene in genes:
+                    gene_to_gses[gene].append(gse_id)
+
+        master_gene_list = list(gene_to_gses.keys())
+
+        if not master_gene_list:
+            print("[DEBUG:RummaGEO] No genes found for any of the target studies.")
+            return pd.DataFrame()
+        
+        # 2. Get disease name for GSEA
+        disease_name = self._get_disease_name_from_efo_id(disease_id)
+        if not disease_name:
+            print(f"[DEBUG:RummaGEO] Could not find disease name for EFO ID {disease_id}. Aborting GSEA.")
+            return pd.DataFrame()
+
+        # 3. Run GSEA and get top terms
+        top_gsea_terms = self._run_gsea_enrichment(list(master_gene_list), disease_name)
+        if top_gsea_terms.empty:
+            print("[DEBUG:RummaGEO] No GSEA terms remained after filtering. Cannot score genes.")
+            return pd.DataFrame()
+
+        # 4. Calculate gene scores from top terms
+        gene_evidence = collections.defaultdict(lambda: {'p_values': [], 'terms': set()})
+        for _, row in top_gsea_terms.iterrows():
+            p_val = row['Adjusted P-value']
+            term = row['Term']
+            genes_in_term = row['Genes'].split(';')
+            for gene in genes_in_term:
+                if gene in master_gene_list: # Ensure we only score genes from our initial list
                     gene_evidence[gene]['p_values'].append(p_val)
                     gene_evidence[gene]['terms'].add(term)
 
-            # --- PHASE 6: Format Final DataFrame ---
-            processed_data = []
-            # Use a very small number to substitute for p-values of 0 to avoid log(0) errors
-            min_p_value = 1e-323 
+        # 5. Format final DataFrame
+        processed_data = []
+        for gene, evidence in gene_evidence.items():
+            # Find the best (lowest) p-value for the gene
+            best_p = min(evidence['p_values'])
+            processed_data.append({
+                "gene_symbol": gene,
+                "source": self.source_name,
+                "p_value": best_p,
+                "evidence": sorted(list(set(gene_to_gses.get(gene, []))))
+            })
 
-            for gene, evidence in gene_evidence.items():
-                # Score is the -log10 of the best (minimum) p-value
-                best_p = max(min(evidence['p_values']), min_p_value)
-                score = -np.log10(best_p)
-                
-                processed_data.append({
-                    "gene_symbol": gene,
-                    "source": self.source_name,
-                    "score": score,
-                    "evidence": list(evidence['terms'])
-                })
-
-            if not processed_data:
-                print("Could not generate final scored data.")
-                return pd.DataFrame()
-
-            final_df = pd.DataFrame(processed_data)
-            return final_df.sort_values(by='score', ascending=False).reset_index(drop=True)
-
-        except requests.exceptions.RequestException as e:
-            print(f"An API error occurred: {e}")
+        if not processed_data:
+            print("[DEBUG:RummaGEO] Could not generate final scored data.")
             return pd.DataFrame()
-        except (KeyError, TypeError, AttributeError) as e:
-            print(f"Error processing data. This may be due to an unexpected API response. Error: {e}")
-            return pd.DataFrame()
+
+        final_df = pd.DataFrame(processed_data)
+        
+        # Apply the new OpenTargets-style smoothing score
+        final_df['score'] = ot_smooth_score(final_df['p_value'].astype(float))
+        
+        return final_df[['gene_symbol', 'source', 'score', 'evidence']].sort_values(by='score', ascending=False).reset_index(drop=True)
 
 #summarize how the opentargets scoring works
 class OpenTargets(DataSource):
@@ -532,4 +477,19 @@ class OpenTargets(DataSource):
             }
             for row in associations
         ]
-        return pd.DataFrame(processed_data)
+        final_df = pd.DataFrame(processed_data)
+        if final_df.empty:
+            return final_df
+        
+        # Rename original score for clarity
+        final_df.rename(columns={'score': 'raw_score'}, inplace=True)
+        
+        # Min-Max Scaling
+        min_s = final_df['raw_score'].min()
+        max_s = final_df['raw_score'].max()
+        if max_s == min_s:
+            final_df['score'] = 1.0
+        else:
+            final_df['score'] = (final_df['raw_score'] - min_s) / (max_s - min_s)
+            
+        return final_df[['gene_symbol', 'source', 'score', 'evidence']].sort_values(by='score', ascending=False).reset_index(drop=True)

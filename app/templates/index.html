@@ -3,13 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Disease Gene Explorer</title>
+    <title>GetGPT</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/loader.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+    <script>
+        window.API_BASE_URL = '{{ api_url }}';
+    </script>
 </head>
 <body>
+    <div id="loader" class="loader-container" style="display: none;">
+        <div class="loader"></div>
+    </div>
+    <header>
+        <h1><a href="/">GetGPT</a></h1>
+        <nav>
+            <button id="dark-mode-toggle">&#9728;</button>
+            <a href="/">Home</a>
+            <a href="/docs">About</a>
+            <a href="/api-docs">API Documentation</a>
+        </nav>
+    </header>
     <div class="container">
-        <h1>Disease Gene Explorer</h1>
-        
         <div class="search-container">
             <input type="text" id="disease-query" placeholder="Enter a disease name...">
             <select id="top-k-select">
@@ -23,16 +38,34 @@
         <div id="efo-results-container">
             <h2>Semantic Search Results</h2>
             <ul id="efo-results-list"></ul>
-            <button id="fetch-genes-btn" style="display:none;">Fetch Genes for Selected</button>
+            <button id="get-genes-button" style="display:none;">Get Genes for Selected EFO ID</button>
         </div>
 
         <div id="gene-list-container">
             <h2>Gene List</h2>
-            <button id="combine-genes-btn" style="display:none;">Combine Gene Lists</button>
-            <div id="gene-tables"></div>
+            <button id="download-csv-btn" style="display:none;">Download CSV</button>
+            <table id="gene-table" class="display" style="width:100%">
+                <thead>
+                    <tr>
+                        <th>Gene</th>
+                        <th>Source</th>
+                        <th>Score</th>
+                        <th>Evidence</th>
+                        <th>EFO ID</th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
         </div>
     </div>
-
+    <footer>
+        <p>
+            Last Updated: Jul 20, 2025
+        </p>
+    </footer>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
     <script src="/static/scripts.js"></script>
 </body>
 </html>

@@ -1,4 +1,7 @@
-import re, json, logging, pathlib
+import re
+import json
+import logging
+import pathlib
 from typing import List, Set, Dict, Any
 from itertools import chain
 import numpy as np
@@ -15,9 +18,15 @@ logger = logging.getLogger(__name__)
 # Helper Functions
 # ==============================================================================
 
-def normalize_efo_id(efo_id: str) -> str:
-    """Converts an EFO ID from 'EFO:xxxx' to 'EFO_xxxx' format."""
-    return efo_id.replace(":", "_")
+def normalize_efo_id(efo_id: str, source_name: str = None) -> str:
+    """
+    Normalizes an EFO ID. For RummaGEO, ensures 'EFO:xxxx' format.
+    For all other sources, ensures 'EFO_xxxx' format.
+    """
+    if source_name == "RummaGEO":
+        return efo_id.replace("_", ":")
+    else:
+        return efo_id.replace(":", "_")
 
 # ==============================================================================
 # Gene Data Source Services
@@ -28,15 +37,15 @@ def get_genes_from_source(source_class, disease_id: str) -> List[Dict[str, Any]]
     A generic function to instantiate a data source class and get genes.
     It now normalizes the EFO ID before processing.
     """
-    normalized_id = normalize_efo_id(disease_id)
     try:
         source_instance = source_class()
+        normalized_id = normalize_efo_id(disease_id, source_class.__name__)
         df = source_instance.get_genes(normalized_id)
         if df.empty:
             return []
         return df.to_dict(orient='records')
     except Exception as e:
-        logger.error(f"Error fetching data from {source_class.__name__} for {normalized_id}: {e}")
+        logger.error(f"Error fetching data from {source_class.__name__} for {disease_id}: {e}")
         return []
 
 # ==============================================================================
@@ -89,9 +98,37 @@ def get_gene_list(disease_id: str = None, query: str = None) -> Dict[str, Any]:
         return {"results": []}
  
      # --- Step 3: Aggregate and de-duplicate genes ---
-    unique_genes = {gene['gene_symbol']: gene for gene in all_genes}.values()
+    # --- Step 3: Aggregate and de-duplicate genes ---
+    aggregated_genes = {}
+    for gene in all_genes:
+        symbol = gene['gene_symbol']
+        if symbol not in aggregated_genes:
+            aggregated_genes[symbol] = {
+                'gene_symbol': symbol,
+                'source': set(),
+                'score': 0,
+                'evidence': []
+            }
+        
+        # Combine sources and evidence
+        aggregated_genes[symbol]['source'].add(gene['source'])
+        if gene.get('evidence'):
+            aggregated_genes[symbol]['evidence'].extend(gene['evidence'])
+        
+        # Keep the highest score
+        if gene['score'] > aggregated_genes[symbol]['score']:
+            aggregated_genes[symbol]['score'] = gene['score']
+
+    # Convert sets to sorted lists for consistent output
+    final_gene_list = []
+    for gene_data in aggregated_genes.values():
+        gene_data['source'] = sorted(list(gene_data['source']))
+        final_gene_list.append(gene_data)
+
+    # Sort by score descending
+    final_gene_list.sort(key=lambda x: x['score'], reverse=True)
      
-    return {"results": list(unique_genes)}
+    return {"results": final_gene_list}
 
 # ==============================================================================
 # PAGER Pathway Analysis Service
@@ -128,7 +165,7 @@ def run_pager_analysis(gene_list: List[str]) -> List[Dict[str, Any]]:
 # ==============================================================================
 
 # ---------- Load EFO data at startup -----------------
-EFO_EMBEDDINGS_PATH = 'data/subject_embeddings.parquet'
+EFO_EMBEDDINGS_PATH = 'data/efo_embeddings.parquet'
 EFO_MODEL_NAME = 'pritamdeka/S-PubMedBert-MS-MARCO'
 
 logger.info("Loading EFO embeddings for semantic search...")
@@ -171,8 +208,8 @@ def semantic_search_efo(query: str, top_k: int = 5):
     for hit in hits:
         row_index = hit['corpus_id']
         results.append({
-            "efo_id": efo_df.iloc[row_index]['subject_id'],
-            "label": efo_df.iloc[row_index]['subject_label'],
+            "efo_id": efo_df.iloc[row_index]['term_id'],
+            "label": efo_df.iloc[row_index]['label'],
             "score": hit['score']
         })
         

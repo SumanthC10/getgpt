@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi.middleware.cors import CORSMiddleware
 from .services import (
     semantic_search_efo,
     get_genes_from_source,
@@ -16,6 +17,18 @@ from .models import (
 from .providers import GWASCatalog, RummaGEO, OpenTargets
 
 app = FastAPI(title="GetGPT API")
+
+origins = [
+    "http://127.0.0.1:5000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ==============================================================================
 # Gene & Pathway Endpoints

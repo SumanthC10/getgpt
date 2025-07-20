@@ -38,7 +38,7 @@ wheelhouse/
 
 # Generated data files
 data/human_study_titles.tsv
-data/subject_embeddings.parquet
+data/efo_embeddings.parquet
 data/efo_to_gse_lookup.json
 *.owl
 

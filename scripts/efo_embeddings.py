@@ -68,7 +68,7 @@ if __name__ == '__main__':
         print("\n--- 🧪 Testing Semantic Search ---")
         search(query="heart attack", model=model, embeddings_df=embeddings_df, corpus_embeddings=corpus_embeddings)
         search(query="cancer of the lung", model=model, embeddings_df=embeddings_df, corpus_embeddings=corpus_embeddings)
-        output_path = 'data/efo_embeddings_with_synonyms.parquet'
+        output_path = 'data/efo_embeddings.parquet'
         print(f"\n💾 Saving DataFrame with embeddings to '{output_path}'")
         embeddings_df.to_parquet(output_path, index=False)
         print("✅ Save complete.")

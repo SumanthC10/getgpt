@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Documentation - GetGPT</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script>
+        window.API_BASE_URL = '{{ api_url }}';
+    </script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><a href="/">GetGPT</a></h1>
+            <nav>
+                <button id="dark-mode-toggle">&#9728;</button>
+                <a href="/">Home</a>
+                <a href="/docs">About</a>
+                <a href="/api-docs">API Documentation</a>
+        </nav>
+        </header>
+        <main style="max-width: 100%; overflow-x: auto;">
+            <h1>API Documentation</h1>
+            <div id="redoc-container"></div>
+            <script id="openapi-spec" type="application/json">
+                {"openapi":"3.1.0","info":{"title":"GetGPT API","version":"0.1.0"},"paths":{"/v1/get-list":{"post":{"summary":"Get List Endpoint","description":"Main endpoint to retrieve a curated list of genes based on a disease.\nAccepts either a direct EFO ID or a raw text query.","operationId":"get_list_endpoint_v1_get_list_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/GetListInput"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GeneListResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/genes/gwascatalog":{"post":{"summary":"Gwas Genes Endpoint","description":"Retrieves genes from the GWAS Catalog for a given EFO ID.","operationId":"gwas_genes_endpoint_v1_genes_gwascatalog_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/DiseaseInput"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GeneListResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/genes/rummageo":{"post":{"summary":"Rummageo Genes Endpoint","description":"Retrieves genes from RummaGEO for a given EFO ID.","operationId":"rummageo_genes_endpoint_v1_genes_rummageo_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/DiseaseInput"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GeneListResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/genes/opentargets":{"post":{"summary":"Opentargets Genes Endpoint","description":"Retrieve genes from OpenTargets for a given EFO ID.","operationId":"opentargets_genes_endpoint_v1_genes_opentargets_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/DiseaseInput"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/GeneListResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/genes/pager":{"post":{"summary":"Pager Analysis Endpoint","description":"Runs PAGER pathway analysis on a provided list of genes.","operationId":"pager_analysis_endpoint_v1_genes_pager_post","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/GeneInput"}}},"required":true},"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/PagerResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/v1/efo_search":{"get":{"summary":"Efo Search Endpoint","operationId":"efo_search_endpoint_v1_efo_search_get","parameters":[{"name":"q","in":"query","required":true,"schema":{"type":"string","minLength":3,"description":"Query string to search for","title":"Q"},"description":"Query string to search for"},{"name":"top_k","in":"query","required":false,"schema":{"type":"integer","description":"Number of results to return. Use -1 for all.","default":5,"title":"Top K"},"description":"Number of results to return. Use -1 for all."}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/EfoSearchResponse"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}}},"components":{"schemas":{"DiseaseInput":{"properties":{"disease_id":{"type":"string","title":"Disease Id","description":"An EFO identifier for a disease, e.g., 'EFO_0000270' or 'EFO:0000270'."}},"type":"object","required":["disease_id"],"title":"DiseaseInput"},"EfoSearchResponse":{"properties":{"results":{"items":{"$ref":"#/components/schemas/EfoSearchResult"},"type":"array","title":"Results"}},"type":"object","required":["results"],"title":"EfoSearchResponse"},"EfoSearchResult":{"properties":{"efo_id":{"type":"string","title":"Efo Id"},"label":{"type":"string","title":"Label"},"score":{"type":"number","title":"Score"}},"type":"object","required":["efo_id","label","score"],"title":"EfoSearchResult"},"Gene":{"properties":{"gene_symbol":{"type":"string","title":"Gene Symbol"},"source":{"type":"string","title":"Source"},"score":{"type":"number","title":"Score"},"evidence":{"title":"Evidence"}},"type":"object","required":["gene_symbol","source","score","evidence"],"title":"Gene"},"GeneInput":{"properties":{"gene_list":{"items":{"type":"string"},"type":"array","minItems":1,"title":"Gene List","description":"A list of gene symbols to be analyzed."}},"type":"object","required":["gene_list"],"title":"GeneInput"},"GeneListResponse":{"properties":{"results":{"items":{"$ref":"#/components/schemas/Gene"},"type":"array","title":"Results"}},"type":"object","required":["results"],"title":"GeneListResponse"},"GetListInput":{"properties":{"disease_id":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Disease Id","description":"An EFO identifier for a disease, e.g., 'EFO_0000270' or 'EFO:0000270'."},"query":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Query","description":"A raw text query for a disease, e.g., 'Alzheimer's disease'."}},"type":"object","title":"GetListInput"},"HTTPValidationError":{"properties":{"detail":{"items":{"$ref":"#/components/schemas/ValidationError"},"type":"array","title":"Detail"}},"type":"object","title":"HTTPValidationError"},"PagerEntity":{"properties":{"PAG ID":{"type":"string","title":"Pag Id"},"PAG Name":{"type":"string","title":"Pag Name"},"GS Size":{"type":"integer","title":"Gs Size"},"Overlap":{"type":"integer","title":"Overlap"},"P-value":{"type":"number","title":"P-Value"},"FDR":{"type":"number","title":"Fdr"}},"type":"object","required":["PAG ID","PAG Name","GS Size","Overlap","P-value","FDR"],"title":"PagerEntity"},"PagerResponse":{"properties":{"results":{"items":{"$ref":"#/components/schemas/PagerEntity"},"type":"array","title":"Results"}},"type":"object","required":["results"],"title":"PagerResponse"},"ValidationError":{"properties":{"loc":{"items":{"anyOf":[{"type":"string"},{"type":"integer"}]},"type":"array","title":"Location"},"msg":{"type":"string","title":"Message"},"type":{"type":"string","title":"Error Type"}},"type":"object","required":["loc","msg","type"],"title":"ValidationError"}}}}
+            </script>
+        </main>
+        <footer>
+            <p>
+                Last Updated: Jul 20, 2025
+            </p>
+        </footer>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js"></script>
+    <script>
+        Redoc.init(JSON.parse(document.getElementById('openapi-spec').innerText), {}, document.getElementById('redoc-container'))
+    </script>
+</body>
+</html>
