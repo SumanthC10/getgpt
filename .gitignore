@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.log
+*.pot
+*.mo
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+develop-eggs/
+.eggs/
+sdist/
+wheelhouse/
+*.egg
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Generated data files
+data/human_study_titles.tsv
+data/subject_embeddings.parquet
+data/efo_to_gse_lookup.json
+
+# PAGER temporary downloads
+pager_dl_*/
