@@ -33,7 +33,7 @@ class GetListInput(BaseModel):
 
 class Gene(BaseModel):
     gene_symbol: str
-    source: str
+    source: List[str]  # Changed from str to List[str]
     score: float
     evidence: Any  # Can be a list of strings, dicts, or empty
 
