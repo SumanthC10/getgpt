@@ -113,7 +113,7 @@ def get_gene_list(disease_id: str = None, query: str = None) -> Dict[str, Any]:
             }
         
         # Aggregate sources and evidence
-        aggregated_genes[symbol]['source'].add(gene['source'])
+        aggregated_genes[symbol]['source'].add(gene['source'][0])
         if gene.get('evidence'):
             aggregated_genes[symbol]['evidence'].extend(gene['evidence'])
         
@@ -139,7 +139,14 @@ def get_gene_list(disease_id: str = None, query: str = None) -> Dict[str, Any]:
         numerator = (w_g * g) + (w_e * e) + (w_t * t)
         denominator = w_g * (1 if g > 0 else 0) + w_e * (1 if e > 0 else 0) + w_t * (1 if t > 0 else 0)
         
-        gene_data['overall_score'] = numerator / denominator if denominator > 0 else 0
+        overall_score = numerator / denominator if denominator > 0 else 0
+        
+        # Assign source-specific scores
+        gene_data['overall_score'] = overall_score
+        gene_data['g_score'] = g
+        gene_data['e_score'] = e
+        gene_data['t_score'] = t
+        
         gene_data['source'] = sorted(list(gene_data['source']))
         final_gene_list.append(gene_data)
 

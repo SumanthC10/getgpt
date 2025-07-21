@@ -198,10 +198,12 @@ class GWASCatalog(DataSource):
                 for gene, data in study_genes.items():
                     all_results.append({
                         "gene_symbol": gene,
-                        "source": self.source_name,
-                        "g_score": -np.log10(data['score']),
+                        "source": [self.source_name],
+                        "g_score": min(-np.log10(data['score']) /  -np.log10(5e-8), 1),
                         "evidence": data['evidence']
                     })
+                for gene in all_results:
+                    print(f"Processed gene: {gene['gene_symbol']} with score: {gene['g_score']}")
             except Exception as e:
                 print(f"Warning: Could not process study {study_id}. Error: {e}")
                 continue
@@ -211,11 +213,12 @@ class GWASCatalog(DataSource):
         # Define aggregation logic for grouping by gene symbol
         agg_logic = {
             'source': 'first',
-            'g_score': 'max',  # Keep the best (highest) -log10(p)
+            'g_score': 'mean',  # Keep the best (highest) -log10(p)
             'evidence': lambda x: list(chain.from_iterable(x))
         }
         # Group by gene and aggregate
         aggregated_df = final_df.groupby('gene_symbol').agg(agg_logic).reset_index()
+
         return aggregated_df[['gene_symbol', 'source', 'g_score', 'evidence']].sort_values(by='g_score', ascending=False).reset_index(drop=True)
 
 
@@ -376,14 +379,15 @@ class RummaGEO(DataSource):
             best_p = min(evidence['p_values'])
             processed_data.append({
                 "gene_symbol": gene,
-                "source": self.source_name,
-                "e_score": -np.log10(best_p),
+                "source": [self.source_name],
+                "e_score": min(-np.log10(best_p) / (-np.log10(5e-8)),1 ),
                 "evidence": sorted(list(set(gene_to_gses.get(gene, []))))
             })
         if not processed_data:
             print("[DEBUG:RummaGEO] Could not generate final scored data.")
             return pd.DataFrame()
         final_df = pd.DataFrame(processed_data)
+
         return final_df[['gene_symbol', 'source', 'e_score', 'evidence']].sort_values(by='e_score', ascending=False).reset_index(drop=True)
 
 #summarize how the opentargets scoring works
@@ -434,7 +438,7 @@ class OpenTargets(DataSource):
         processed_data = [
             {
                 "gene_symbol": row['target']['approvedSymbol'],
-                "source": self.source_name,
+                "source": [self.source_name],
                 "t_score": row['score'],
                 "evidence": []
             }
