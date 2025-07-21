@@ -19,6 +19,7 @@ def clean_text(text: str) -> str:
 
 # 1. Load the ontology
 print("Parsing ontology file...")
+#owl file retrieved from https://github.com/EBISPOT/efo/releases - current version is July 15 2025 version
 g = Graph().parse("data/efo.owl")
 
 

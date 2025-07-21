@@ -35,6 +35,7 @@ wheelhouse/
 *.swp
 *.swo
 *~
+.DS_Store
 
 # Generated data files
 data/human_study_titles.tsv
