@@ -12,8 +12,12 @@ from .models import (
     PagerResponse,
     DiseaseInput,
     GeneInput,
-    GetListInput
+    GetListInput,
+    GwasGeneResponse,
+    RummaGEOGeneResponse,
+    OpenTargetsGeneResponse
 )
+
 from .providers import GWASCatalog, RummaGEO, OpenTargets
 
 app = FastAPI(title="GetGPT API")
@@ -52,19 +56,19 @@ def get_list_endpoint(payload: GetListInput = Body(...)):
         # Catches errors from the service layer, e.g., query resolution failure
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
 
-@app.post("/v1/genes/gwascatalog", response_model=GeneListResponse)
+@app.post("/v1/genes/gwascatalog", response_model=GwasGeneResponse)
 def gwas_genes_endpoint(payload: DiseaseInput = Body(...)):
     """Retrieves genes from the GWAS Catalog for a given EFO ID."""
     results = get_genes_from_source(GWASCatalog, payload.disease_id)
     return {"results": results}
 
-@app.post("/v1/genes/rummageo", response_model=GeneListResponse)
+@app.post("/v1/genes/rummageo", response_model=RummaGEOGeneResponse)
 def rummageo_genes_endpoint(payload: DiseaseInput = Body(...)):
     """Retrieves genes from RummaGEO for a given EFO ID."""
     results = get_genes_from_source(RummaGEO, payload.disease_id)
     return {"results": results}
 
-@app.post("/v1/genes/opentargets", response_model=GeneListResponse)
+@app.post("/v1/genes/opentargets", response_model=OpenTargetsGeneResponse)
 def opentargets_genes_endpoint(payload: DiseaseInput = Body(...)):
     """Retrieve genes from OpenTargets for a given EFO ID."""
     results = get_genes_from_source(OpenTargets, payload.disease_id)

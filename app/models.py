@@ -31,9 +31,13 @@ class GetListInput(BaseModel):
 # Gene & Data Source Response Models
 # ==============================================================================
 
+class SourceInfo(BaseModel):
+    name: str
+    url: str
+
 class Gene(BaseModel):
     gene_symbol: str
-    source: List[str]
+    source: List[SourceInfo]
     overall_score: float = Field(..., description="The combined, weighted score from all available data sources.")
     g_score: float = Field(default=0, description="Score from GWAS Catalog, based on the -log10(p-value).")
     e_score: float = Field(default=0, description="Score from RummaGEO, based on GSEA enrichment p-value.")
@@ -74,9 +78,34 @@ class EfoSearchResponse(BaseModel):
     results: List[EfoSearchResult]
 
 # ==============================================================================
-# Deprecated Models
+# Single-Source Response Models
 # ==============================================================================
 
-class CompletionResp(BaseModel):
-    disease: str
-    score: float
+class GwasGene(BaseModel):
+    gene_symbol: str
+    source: List[str]
+    g_score: float = Field(default=0, description="Score from GWAS Catalog, based on the -log10(p-value).")
+    evidence: Any
+
+class GwasGeneResponse(BaseModel):
+    results: List[GwasGene]
+
+
+class RummaGEOGene(BaseModel):
+    gene_symbol: str
+    source: List[str]
+    e_score: float = Field(default=0, description="Score from RummaGEO, based on GSEA enrichment p-value.")
+    evidence: Any
+
+class RummaGEOGeneResponse(BaseModel):
+    results: List[RummaGEOGene]
+
+
+class OpenTargetsGene(BaseModel):
+    gene_symbol: str
+    source: List[str]
+    t_score: float = Field(default=0, description="Association score from OpenTargets (0 to 1).")
+    evidence: Any
+
+class OpenTargetsGeneResponse(BaseModel):
+    results: List[OpenTargetsGene]

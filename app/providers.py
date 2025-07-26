@@ -126,6 +126,20 @@ def get_pager_search_results(gene_input: str) -> pd.DataFrame:
         raise RuntimeError("Advanced CSV missing 'PAG ID' column.")
     return adv_df
 
+
+def source_to_url(src: str) -> str:
+    """Return a hyperlink for a given source string."""
+    if src.startswith("GSE"):
+        return f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={src}"
+    if src.startswith("GCST"):          # GWAS Catalog study accession
+        return f"https://www.ebi.ac.uk/gwas/studies/{src}"
+    if src.lower().startswith("efo"):   # just in case you expose EFO IDs
+        return f"https://www.ebi.ac.uk/ols/ontologies/efo/terms?short_form={src.replace(':','_')}"
+    if src.lower() == "gwas catalog":
+        return "https://www.ebi.ac.uk/gwas/"
+    # …add any other data sources you use
+    return "#"  
+
 class DataSource(ABC):
     def __init__(self, source_name):
         self.source_name = source_name
@@ -202,8 +216,6 @@ class GWASCatalog(DataSource):
                         "g_score": min(-np.log10(data['score']) /  -np.log10(5e-8), 1),
                         "evidence": data['evidence']
                     })
-                for gene in all_results:
-                    print(f"Processed gene: {gene['gene_symbol']} with score: {gene['g_score']}")
             except Exception as e:
                 print(f"Warning: Could not process study {study_id}. Error: {e}")
                 continue
@@ -213,7 +225,7 @@ class GWASCatalog(DataSource):
         # Define aggregation logic for grouping by gene symbol
         agg_logic = {
             'source': 'first',
-            'g_score': 'mean',  # Keep the best (highest) -log10(p)
+            'g_score': 'mean',
             'evidence': lambda x: list(chain.from_iterable(x))
         }
         # Group by gene and aggregate
@@ -308,6 +320,7 @@ class RummaGEO(DataSource):
                 return pd.DataFrame()
             
             results_df = enr_results.results
+            print(results_df.sort_values(by='Adjusted P-value', ascending=True).head(10))
             print("[DEBUG:RummaGEO] GSEApy Analysis Complete. Filtering results...")
 
             # Filter using sentence transformer
@@ -364,7 +377,8 @@ class RummaGEO(DataSource):
         # 4. Calculate gene scores from top terms
         gene_evidence = collections.defaultdict(lambda: {'p_values': [], 'terms': set()})
         for _, row in top_gsea_terms.iterrows():
-            p_val = row['Adjusted P-value']
+            p_val = row['P-value']
+            print(f"[DEBUG:RummaGEO] Processing term: {row['Term']} with p-value: {p_val}")
             term = row['Term']
             genes_in_term = row['Genes'].split(';')
             for gene in genes_in_term:
@@ -380,7 +394,7 @@ class RummaGEO(DataSource):
             processed_data.append({
                 "gene_symbol": gene,
                 "source": [self.source_name],
-                "e_score": min(-np.log10(best_p) / (-np.log10(5e-8)),1 ),
+                "e_score": min((-np.log10(best_p) / (-np.log10(5e-8))), 1),
                 "evidence": sorted(list(set(gene_to_gses.get(gene, []))))
             })
         if not processed_data:
@@ -409,19 +423,25 @@ class OpenTargets(DataSource):
 
         url = "https://api.platform.opentargets.org/api/v4/graphql"
         query = """
-        query associatedTargetsQuery($efoId: String!, $size: Int!, $from: Int!) {
-          disease(efoId: $efoId) {
-            associatedTargets(size: $size, from: $from) {
-              rows {
-                target { approvedSymbol }
-                score
-              }
+        query associatedTargetsQuery($efoId: String!) {
+            disease(efoId: $efoId) {
+                id
+                name
+                associatedTargets {
+                count
+                rows {
+                    target {
+                    id
+                    approvedSymbol
+                    }
+                    score
+                }
+                }
             }
-          }
-        }
+            }
         """
         try:
-            response = requests.post(url, json={"query": query, "variables": {"efoId": normalized_efo_id, "size": 10000, "from": 0}})
+            response = requests.post(url, json={"query": query, "variables": {"efoId": normalized_efo_id}})
             response.raise_for_status()
             data = response.json()
         except requests.exceptions.RequestException as e:
