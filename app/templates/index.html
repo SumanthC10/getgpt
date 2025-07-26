@@ -16,11 +16,16 @@
         <div class="loader"></div>
     </div>
     <header>
-        <h1><a href="/">GetGPT</a></h1>
+        <div class="header-left">
+            <h1><a href="/">GetGPT</a></h1>
+            <a href="/docs" class="header-link">About</a>
+            <button id="dark-mode-toggle" class="header-button">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-sun"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+            </button>
+        </div>
         <nav>
-            <button id="dark-mode-toggle">&#9728;</button>
             <a href="/">Home</a>
-            <a href="/docs">About</a>
+            <a href="/analyze">Analyze</a>
             <a href="/api-docs">API Documentation</a>
         </nav>
     </header>
@@ -28,7 +33,7 @@
         <div class="search-container">
             <input type="text" id="disease-query" placeholder="Enter a disease name...">
             <select id="top-k-select">
-                <option value="5">Top 5</option>
+                <option value="5" selected>Top 5</option>
                 <option value="10">Top 10</option>
                 <option value="20">Top 20</option>
             </select>
@@ -38,7 +43,12 @@
         <div id="efo-results-container">
             <h2>Semantic Search Results</h2>
             <ul id="efo-results-list"></ul>
-            <button id="get-genes-button" style="display:none;">Get Genes for Selected EFO ID</button>
+        </div>
+
+        <div id="selected-efos-container">
+            <h2>Selected EFOs</h2>
+            <div id="selected-efos-list"></div>
+            <button id="get-genes-button" style="display:none;">Get Genes for Selected EFOs</button>
         </div>
 
         <div id="gene-list-container">
@@ -64,7 +74,7 @@
     </div>
     <footer>
         <p>
-            Last Updated: Jul 20, 2025
+            Last Updated: {{ last_updated }}
         </p>
     </footer>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>

@@ -322,7 +322,6 @@ class RummaGEO(DataSource):
                 return pd.DataFrame()
             
             results_df = enr_results.results
-            print(results_df.sort_values(by='Adjusted P-value', ascending=True).head(10))
 
             # Filter using sentence transformer
             model = SentenceTransformer("pritamdeka/S-PubMedBert-MS-MARCO")

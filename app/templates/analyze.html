@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analyze Gene Sets - GetGPT</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/loader.css">
+    <script>
+        window.API_BASE_URL = '{{ api_url }}';
+    </script>
+</head>
+<body>
+    <div id="loader" class="loader-container" style="display: none;">
+        <div class="loader"></div>
+    </div>
+    <header>
+        <h1><a href="/">GetGPT</a></h1>
+        <nav>
+            <button id="dark-mode-toggle">&#9728;</button>
+            <a href="/">Home</a>
+            <a href="/analyze">Analyze</a>
+            <a href="/docs">About</a>
+            <a href="/api-docs">API Documentation</a>
+        </nav>
+    </header>
+    <div class="container">
+        <h2>Analyze Gene Sets</h2>
+        <p>Select any two gene sets from the list below to perform an analysis.</p>
+        <div id="geneset-selection-container">
+            <!-- Checkboxes will be dynamically inserted here -->
+        </div>
+        <button id="analyze-btn">Analyze</button>
+        <div id="analysis-results-container">
+            <!-- Analysis results will be displayed here -->
+        </div>
+    </div>
+    <footer>
+        <p>
+            Last Updated: Jul 20, 2025
+        </p>
+    </footer>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="/static/analyze.js"></script>
+</body>
+</html>
