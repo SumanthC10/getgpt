@@ -24,16 +24,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(`${window.API_BASE_URL}/v1/efo_search?q=${query}&top_k=${topK}`);
             const data = await response.json();
             
-            efoResultsList.innerHTML = '';
             data.results.forEach(item => {
+                // Prevent duplicates
+                if (document.querySelector(`li[data-efo-id="${item.efo_id}"]`)) {
+                    return;
+                }
                 const li = document.createElement('li');
                 li.textContent = `${item.label} (${item.efo_id}) - Score: ${item.score.toFixed(2)}`;
                 li.dataset.efoId = item.efo_id;
                 li.dataset.score = item.score;
                 li.addEventListener('click', () => {
-                    li.classList.toggle('selected');
                     const selectedCount = efoResultsList.querySelectorAll('.selected').length;
-                    getGenesButton.style.display = selectedCount > 0 ? 'block' : 'none';
+                    if (!li.classList.contains('selected') && selectedCount >= 5) {
+                        alert("You can select a maximum of 5 EFO IDs.");
+                        return;
+                    }
+                    li.classList.toggle('selected');
+                    const newSelectedCount = efoResultsList.querySelectorAll('.selected').length;
+                    getGenesButton.style.display = newSelectedCount > 0 ? 'block' : 'none';
                 });
                 efoResultsList.appendChild(li);
             });
@@ -110,13 +118,13 @@ diseaseQueryInput.addEventListener('keypress', (event) => {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>${gene.gene_symbol}</td>
-                <td>${Array.isArray(gene.source) ? gene.source.join(', ') : gene.source}</td>
-                <td>${gene.g_score ? gene.g_score.toFixed(4) : 'N/A'}</td>
-                <td>${gene.e_score ? gene.e_score.toFixed(4) : 'N/A'}</td>
-                <td>${gene.t_score ? gene.t_score.toFixed(4) : 'N/A'}</td>
+                <td>${formatSource(gene.source)}</td>
+                <td>${gene.g_score ? gene.g_score.toFixed(4) : ''}</td>
+                <td>${gene.e_score ? gene.e_score.toFixed(4) : ''}</td>
+                <td>${gene.t_score ? gene.t_score.toFixed(4) : ''}</td>
                 <td>${gene.overall_score.toFixed(4)}</td>
                 <td>${formatEvidence(gene.evidence)}</td>
-                <td>${gene.efo_id}</td>
+                <td><a href="http://purl.obolibrary.org/obo/${gene.efo_id.replace(':', '_')}" target="_blank" class="efo-link">${gene.efo_id}</a></td>
             `;
             tableBody.appendChild(row);
         });
@@ -129,7 +137,14 @@ diseaseQueryInput.addEventListener('keypress', (event) => {
     }
 
     function formatEvidence(evidence) {
-        if (!evidence || evidence.length === 0) return 'N/A';
+        if (!evidence || evidence.length === 0) return '';
+
+        // Check if evidence is in the new hyperlink format
+        if (typeof evidence[0] === 'object' && evidence[0] !== null && 'url' in evidence[0]) {
+            return evidence.map(item => `<a href="${item.url}" target="_blank" class="evidence-link">${item.display}</a>`).join(' ');
+        }
+        
+        // Fallback for old format
         if (typeof evidence[0] === 'string') {
             return evidence.join(', ');
         }
@@ -137,6 +152,14 @@ diseaseQueryInput.addEventListener('keypress', (event) => {
             return evidence.map(item => item.rsid || JSON.stringify(item)).join(', ');
         }
         return JSON.stringify(evidence);
+    }
+
+    function formatSource(source) {
+        if (!source) return '';
+        if (Array.isArray(source)) {
+            return source.map(s => `<a href="${s.url}" target="_blank" class="source-link">${s.name}</a>`).join(' ');
+        }
+        return `<a href="${source.url}" target="_blank" class="source-link">${source.name}</a>`;
     }
 
     // --- Initialization ---

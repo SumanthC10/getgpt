@@ -137,8 +137,12 @@ def source_to_url(src: str) -> str:
         return f"https://www.ebi.ac.uk/ols/ontologies/efo/terms?short_form={src.replace(':','_')}"
     if src.lower() == "gwas catalog":
         return "https://www.ebi.ac.uk/gwas/"
+    if src.lower() == "rummageo":
+        return "https://rummageo.com/"
+    if src.lower() == "opentargets":
+        return "https://www.opentargets.org/"
     # …add any other data sources you use
-    return "#"  
+    return "#"
 
 class DataSource(ABC):
     def __init__(self, source_name):
@@ -217,7 +221,7 @@ class GWASCatalog(DataSource):
                         "evidence": data['evidence']
                     })
             except Exception as e:
-                print(f"Warning: Could not process study {study_id}. Error: {e}")
+                #print(f"Warning: Could not process study {study_id}. Error: {e}")
                 continue
         if not all_results:
             return pd.DataFrame()
@@ -244,7 +248,6 @@ class RummaGEO(DataSource):
         try:
             with open(lookup_file, 'r') as f:
                 self.efo_to_gse = json.load(f)
-            print("[DEBUG:RummaGEO] Successfully loaded EFO to GSE lookup.")
         except FileNotFoundError:
             print(f"[DEBUG:RummaGEO] Error: EFO to GSE lookup file not found at {lookup_file}")
             self.efo_to_gse = {}
@@ -310,7 +313,6 @@ class RummaGEO(DataSource):
         if not gene_list:
             print("[DEBUG:RummaGEO] GSEA enrichment called with an empty gene list.")
             return pd.DataFrame()
-        print(f"\n[DEBUG:RummaGEO] Running GSEApy enrichment for '{disease_name}' with {len(gene_list)} genes...")
         try:
             enr_results = gp.enrichr(
                 gene_list=gene_list, gene_sets='DisGeNET', organism='human', outdir=None, cutoff=1
@@ -321,7 +323,6 @@ class RummaGEO(DataSource):
             
             results_df = enr_results.results
             print(results_df.sort_values(by='Adjusted P-value', ascending=True).head(10))
-            print("[DEBUG:RummaGEO] GSEApy Analysis Complete. Filtering results...")
 
             # Filter using sentence transformer
             model = SentenceTransformer("pritamdeka/S-PubMedBert-MS-MARCO")
@@ -339,7 +340,6 @@ class RummaGEO(DataSource):
         """
         Combines gene fetching from RummaGEO with GSEApy enrichment analysis to score genes.
         """
-        print(f"\n[DEBUG:RummaGEO] Received disease_id: {disease_id}")
         
         # 1. Fetch master gene list from RummaGEO
         studies_from_lookup = self.efo_to_gse.get(disease_id, [])
@@ -378,7 +378,6 @@ class RummaGEO(DataSource):
         gene_evidence = collections.defaultdict(lambda: {'p_values': [], 'terms': set()})
         for _, row in top_gsea_terms.iterrows():
             p_val = row['P-value']
-            print(f"[DEBUG:RummaGEO] Processing term: {row['Term']} with p-value: {p_val}")
             term = row['Term']
             genes_in_term = row['Genes'].split(';')
             for gene in genes_in_term:
@@ -416,10 +415,8 @@ class OpenTargets(DataSource):
     
     def get_genes(self, disease_id: str) -> pd.DataFrame:
         """Queries OpenTargets for gene-disease associations."""
-        print(f"\n[DEBUG:OpenTargets] Received disease_id: {disease_id}")
         # Normalize EFO ID to use colon for the API query
         normalized_efo_id = disease_id.replace(':', '_')
-        print(f"[DEBUG:OpenTargets] Normalized EFO ID: {normalized_efo_id}")
 
         url = "https://api.platform.opentargets.org/api/v4/graphql"
         query = """
@@ -453,7 +450,6 @@ class OpenTargets(DataSource):
             print(f"[DEBUG:OpenTargets] No associations found for {normalized_efo_id}")
             return pd.DataFrame()
         
-        print(f"[DEBUG:OpenTargets] Found {len(associations)} associations for {normalized_efo_id}")
 
         processed_data = [
             {

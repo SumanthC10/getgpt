@@ -225,3 +225,86 @@ body.dark-mode table.dataTable.display tbody tr.even {
 body.dark-mode .loader-container {
     background-color: rgba(30, 30, 30, 0.7);
 }
+/* --- Link Badge Styles --- */
+.source-link, .evidence-link, .efo-link {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 500;
+    margin: 2px;
+    transition: all 0.2s ease-in-out;
+}
+
+.source-link {
+    background-color: #e0e0e0;
+    color: #333;
+}
+
+.source-link:hover {
+    background-color: #c7c7c7;
+    color: #000;
+}
+
+.evidence-link {
+    background-color: #d1e7dd;
+    color: #0f5132;
+}
+
+.evidence-link:hover {
+    background-color: #b8d6c8;
+    color: #0a3622;
+}
+
+.evidence-link:visited {
+    background-color: #b8d6c8;
+    color: #0a3622;
+}
+
+.efo-link {
+    background-color: #dcedc8;
+    color: #558b2f;
+}
+
+.efo-link:hover {
+    background-color: #c5e1a5;
+    color: #33691e;
+}
+/* Dark Mode Badge Styles */
+body.dark-mode .source-link {
+    background-color: #4f4f4f;
+    color: #e0e0e0;
+}
+
+body.dark-mode .source-link:hover {
+    background-color: #666666;
+    color: #ffffff;
+}
+
+body.dark-mode .evidence-link {
+    background-color: #2c5a43;
+    color: #a3cfbb;
+}
+
+body.dark-mode .evidence-link:hover {
+    background-color: #3a7558;
+body.dark-mode .efo-link {
+    background-color: #3a4b3a;
+    color: #a5d6a7;
+}
+
+body.dark-mode .efo-link:hover {
+    background-color: #4a5c4a;
+    color: #c8e6c9;
+}
+    color: #d1e7dd;
+}
+
+body.dark-mode .evidence-link:visited {
+.gene-table th:nth-child(2) {
+    min-width: 150px; /* Adjust as needed */
+}
+    background-color: #3a7558;
+    color: #d1e7dd;
+}

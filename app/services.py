@@ -10,7 +10,7 @@ import torch
 from sentence_transformers import SentenceTransformer, util
 from rapidfuzz import fuzz
 
-from .providers import get_pager_search_results, GWASCatalog, RummaGEO, OpenTargets
+from .providers import get_pager_search_results, GWASCatalog, RummaGEO, OpenTargets, source_to_url
 
 logger = logging.getLogger(__name__)
 
@@ -52,16 +52,16 @@ def get_genes_from_source(source_class, disease_id: str) -> List[Dict[str, Any]]
 # Main Orchestration Service
 # ==============================================================================
 
-def get_gene_list(disease_id: str = None, query: str = None) -> Dict[str, Any]:
+def get_gene_list(disease_ids: List[str] = None, query: str = None) -> Dict[str, Any]:
     """
     Orchestrates the gene list retrieval pipeline:
     1. If a raw query is provided, use semantic search to find the best EFO ID.
-    2. Fetches genes from GWAS, RummaGEO, and OpenTargets concurrently using the EFO ID.
+    2. Fetches genes from GWAS, RummaGEO, and OpenTargets for each EFO ID.
     3. Aggregates and de-duplicates the final gene list.
     """
     from concurrent.futures import ThreadPoolExecutor
 
-    target_efo_id = disease_id
+    target_efo_ids = disease_ids if disease_ids else []
     
     # --- Step 1: Handle raw text query if provided ---
     if query:
@@ -69,30 +69,37 @@ def get_gene_list(disease_id: str = None, query: str = None) -> Dict[str, Any]:
             search_results = semantic_search_efo(query, top_k=1)
             if not search_results:
                 raise RuntimeError(f"No EFO term found for query: '{query}'")
-            target_efo_id = search_results[0]['efo_id']
-            logger.info(f"Query '{query}' mapped to EFO ID: {target_efo_id}")
+            target_efo_ids = [search_results[0]['efo_id']]
+            logger.info(f"Query '{query}' mapped to EFO ID: {target_efo_ids[0]}")
         except Exception as e:
             logger.error(f"Failed to resolve query '{query}' to an EFO ID: {e}")
-            return {"results": []} # Return empty if query fails
+            return {"results": []}
  
-    if not target_efo_id:
+    if not target_efo_ids:
          return {"results": []}
 
-    # --- Step 2: Fetch genes from all sources concurrently ---
+    # --- Step 2: Fetch genes from all sources for all EFO IDs ---
     gene_sources = [GWASCatalog, RummaGEO, OpenTargets]
     all_genes = []
     
-    with ThreadPoolExecutor(max_workers=len(gene_sources)) as executor:
-        future_to_source = {executor.submit(get_genes_from_source, source, target_efo_id): source for source in gene_sources}
+    with ThreadPoolExecutor(max_workers=len(gene_sources) * len(target_efo_ids)) as executor:
+        future_to_source = {
+            executor.submit(get_genes_from_source, source, efo_id): (source, efo_id)
+            for source in gene_sources
+            for efo_id in target_efo_ids
+        }
         
         for future in future_to_source:
             try:
                 genes = future.result()
                 if genes:
+                    _, efo_id = future_to_source[future]
+                    for gene in genes:
+                        gene['efo_id'] = efo_id
                     all_genes.extend(genes)
             except Exception as e:
-                source_name = future_to_source[future].__name__
-                logger.error(f"Error retrieving results from {source_name}: {e}")
+                source_name, efo_id = future_to_source[future]
+                logger.error(f"Error retrieving results from {source_name.__name__} for {efo_id}: {e}")
 
     if not all_genes:
         return {"results": []}
@@ -109,13 +116,32 @@ def get_gene_list(disease_id: str = None, query: str = None) -> Dict[str, Any]:
                 'g_score': 0,
                 'e_score': 0,
                 't_score': 0,
-                'evidence': []
+                'evidence': [],
+                'efo_ids': set()
             }
         
-        # Aggregate sources and evidence
+        # Aggregate sources, evidence, and EFO IDs
         aggregated_genes[symbol]['source'].add(gene['source'][0])
+        aggregated_genes[symbol]['efo_ids'].add(gene['efo_id'])
+        
+        # Process evidence to create hyperlinks
         if gene.get('evidence'):
-            aggregated_genes[symbol]['evidence'].extend(gene['evidence'])
+            for item in gene['evidence']:
+                # For RummaGEO, evidence is a list of GSE IDs
+                if gene['source'][0] == 'RummaGEO':
+                    if isinstance(item, str):
+                         aggregated_genes[symbol]['evidence'].append({
+                            "display": item,
+                            "url": source_to_url(item)
+                        })
+                # For GWAS, evidence is a list of dicts with rsid and study
+                elif gene['source'][0] == 'GWAS Catalog':
+                    if isinstance(item, dict) and 'rsid' in item and 'study' in item:
+                        aggregated_genes[symbol]['evidence'].append({
+                            "display": f"{item['rsid']} ({item['study']})",
+                            "url": source_to_url(item['study'])
+                        })
+
         
         # Store individual scores, keeping the max if a gene appears in one source multiple times
         if 'g_score' in gene:
@@ -147,7 +173,11 @@ def get_gene_list(disease_id: str = None, query: str = None) -> Dict[str, Any]:
         gene_data['e_score'] = e
         gene_data['t_score'] = t
         
-        gene_data['source'] = sorted(list(gene_data['source']))
+        # Convert source names to a list of SourceInfo-compatible dicts
+        source_names = sorted(list(gene_data['source']))
+        gene_data['source'] = [{"name": name, "url": source_to_url(name)} for name in source_names]
+        gene_data['efo_id'] = list(gene_data['efo_ids']) # Convert set to list
+        
         final_gene_list.append(gene_data)
 
     # Sort by overall_score descending

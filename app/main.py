@@ -45,7 +45,7 @@ def get_list_endpoint(payload: GetListInput = Body(...)):
     Accepts either a direct EFO ID or a raw text query.
     """
     try:
-        results = get_gene_list(disease_id=payload.disease_id, query=payload.query)
+        results = get_gene_list(disease_ids=payload.disease_ids, query=payload.query)
         if not results["results"]:
             raise HTTPException(status_code=404, detail="No genes found for the given input.")
         return results

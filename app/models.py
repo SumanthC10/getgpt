@@ -12,19 +12,19 @@ class GeneInput(BaseModel):
     gene_list: List[str] = Field(..., description="A list of gene symbols to be analyzed.", min_items=1)
 
 class GetListInput(BaseModel):
-    disease_id: Optional[str] = Field(default=None, description="An EFO identifier for a disease, e.g., 'EFO_0000270' or 'EFO:0000270'.")
-    query: Optional[str] = Field(default=None, description="A raw text query for a disease, e.g., 'Alzheimer's disease'.")
+    disease_ids: Optional[List[str]] = Field(default=None, description="A list of EFO identifiers for diseases.")
+    query: Optional[str] = Field(default=None, description="A raw text query for a disease.")
 
     @model_validator(mode='before')
     @classmethod
     def check_one_input(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            has_disease_id = 'disease_id' in data and data.get('disease_id')
+            has_disease_ids = 'disease_ids' in data and data.get('disease_ids')
             has_query = 'query' in data and data.get('query')
-            if has_disease_id and has_query:
-                raise ValueError('Provide either disease_id or query, not both.')
-            if not has_disease_id and not has_query:
-                raise ValueError('Either disease_id or query must be provided.')
+            if has_disease_ids and has_query:
+                raise ValueError('Provide either disease_ids or query, not both.')
+            if not has_disease_ids and not has_query:
+                raise ValueError('Either disease_ids or query must be provided.')
         return data
 
 # ==============================================================================
